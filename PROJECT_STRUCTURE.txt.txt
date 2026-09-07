@@ -1,5 +1,5 @@
 Hotel Booking Platform — Design Document
-Rupeek SDE-3 Machine Coding Round · Question A Author: Umesh Maurya Stack: Java 21 · Spring Boot 3.x · H2 (MySQL compatibility mode) · Gradle
+Rupeek SDE-3 Machine Coding Round · Question A Author: Umesh Maurya Stack: Java 21 · Spring Boot 4.1.x · H2 (MySQL compatibility mode) · Gradle
 
 0. Reading Guide
 This document is the design record for the submission. It is deliberately explicit about what is built, what is not built, and why — because at this level the decision not to build something is as much a signal as the code itself.
@@ -13,6 +13,16 @@ Practice repo (separate)
 Microservices, gRPC, Kafka/Avro/DLQ, Redis, MySQL partitioning, real load testing. Built for learning, not for review.
 
 Everything in Section 16 lives in the practice repo, not here.
+
+0.1 A mid-course revision — entities replace the domain/entity split
+Sections 2 and 3 below originally described a hexagonal design: a framework-free domain model (plain classes, typed value-object ids, repository port interfaces) kept deliberately separate from JPA persistence entities, connected by an explicit mapper. That was built for Phase 1 and then deliberately reworked, on explicit direction, into a single conventional entity layer before Phase 2 began. This document has been updated in place to describe the current (post-revision) design rather than keeping the superseded one as a historical artifact — a design record that documents an approach no longer in the code would mislead a reviewer more than it would inform one.
+What changed, and why it is stated as a revision rather than quietly rewritten: the earlier design's core claim was that keeping the domain framework-free (Section 4's coding rule: no JPA/Spring annotations, no now(), typed ids instead of primitives) buys testability and a persistence-agnostic core, at the cost of a duplicate model and a mapping layer. That trade-off is real, but it is also more machinery than a single-database, single-team submission needs to demonstrate at this scope — and simpler, more conventional Spring code is easier for a reviewer to read quickly. The revision trades that testability/purity story for less code and a shape any Spring Boot developer recognises immediately:
+Entities now carry their own JPA annotations and Lombok-generated boilerplate directly (Section 2.3). There is no separate domain model and no mapper.
+Every top-level aggregate has two ids: a Long id (@GeneratedValue(IDENTITY), the database primary key, never exposed) and a separate UUID "*Uid" column, assigned in @PrePersist, which is what every lookup and API actually uses (Section 3.2). This is the direct answer to a Long-primary-key's biggest weakness in a public API: sequential ids leak row counts and are guessable; the UUID never does.
+Value objects (DateRange, Money, UnitCount, GuestCount, Location) and typed identifiers (BookingId, PaymentId, MsgId, …) are gone. Their validation either moved onto the entity directly (Booking.nights(), Booking.validateDateRange()) or became a Bean Validation annotation (@NotNull, @Min, @Max). The one deliberate capability loss worth naming: Money's compile-time currency-mismatch protection has no replacement — amount and currency are now plain BigDecimal/String fields with no guard against a cross-currency arithmetic bug. Accepted at this scope; would need revisiting if multi-currency were ever real.
+Repository port interfaces are gone. repository.* is now just Spring Data JpaRepository<Entity, Long> interfaces — the Repository pattern is still present (Section 14), just auto-implemented rather than hand-wired through a port and an adapter.
+BookingStateMachine is unchanged in logic (same total transition table, same terminal states, same same-state-is-a-no-op rule) but is now a stateless static utility rather than an injected component, since the port/adapter split was the only reason it needed to be instantiated.
+Every other section of this document — inventory model, concurrency mechanism, payment SPI, resilience, idempotency, refunds/ledger, webhooks, persistence schema, testing strategy, phased plan — describes mechanisms and guarantees that do not depend on which of the two shapes holds the data, and are updated below only where they specifically referenced a now-removed type (InventoryKey, PropertyClock, Money, a typed id).
 
 1. Problem Choice and Rationale
 Chosen: Question A — Hotel Booking.
@@ -34,73 +44,69 @@ Why maid's inventory model is weaker for this purpose: a maid is a single resour
 
 2. Architecture
 2.1 Shape
-Modular monolith, layered, with domain logic isolated from framework and persistence.
+Modular monolith, layered by responsibility (persistence, orchestration, HTTP), not by framework-independence.
 Rationale: booking, inventory reservation and payment state must move together transactionally. Splitting them into services would manufacture a distributed-transaction problem that does not exist at this scope. The seams are drawn so a future split is mechanical — see Section 16.
 2.2 Dependency direction
-api  ──►  application  ──►  domain  ◄──  infrastructure
-                                │
-                          (ports/interfaces)
+controller  ──►  service  ──►  repository  ──►  entity
 
-domain depends on nothing. No Spring annotations, no JPA annotations, no DTOs.
-infrastructure implements ports defined by domain/application.
-api never touches infrastructure or repositories directly.
+entity is the persisted model: JPA-annotated directly, no separate domain representation.
+repository is Spring Data JPA — an interface per entity, no hand-written implementation.
+controller depends on dto and service, never on repository or entity directly, so the database shape never crosses the HTTP boundary.
+There is deliberately no ports-and-adapters layer here (see 0.1). The dependency direction above is about keeping the HTTP contract (dto) decoupled from the storage contract (entity) — the one seam this design actually needs — not about isolating business logic from the framework.
 2.3 Package structure
 com.umesh.hotelbooking
 │
-├── domain
-│   ├── model
-│   │   ├── owner        Owner, PropertyGroup
-│   │   ├── property     Property, RoomType, Amenity, StarRating
-│   │   ├── inventory    DailyInventory, InventoryKey
-│   │   ├── booking      Booking, BookingState, BookingStateMachine,
-│   │   │                BookingStateTransition, BookingLineItem
-│   │   ├── payment      Payment, PaymentState, PaymentMethod, Refund, Reversal
-│   │   └── ledger       LedgerEntry, EntryType, Direction
-│   ├── vo               DateRange, Money, Location, GuestCount,
-│   │                    BookingId, PaymentId, MsgId
-│   ├── policy           RefundPolicy, PricingStrategy   (interfaces)
-│   ├── port             *Repository interfaces, PaymentGatewayProvider,
-│   │                    NotificationChannel, Clock
-│   ├── event            BookingConfirmedEvent, BookingCancelledEvent,
-│   │                    PropertyOnboardedEvent, PaymentSettledEvent
-│   └── exception        DomainException hierarchy
+├── entity               JPA entities — the persisted model. Each aggregate carries a Long
+│                        id (the database primary key, @GeneratedValue(IDENTITY), never
+│                        exposed) and a second UUID "*Uid" column, assigned in @PrePersist,
+│                        which every lookup and API actually uses (see 0.1, 3.2).
+│                        Owner, PropertyGroup, Property, RoomType, DailyInventory,
+│                        Booking, BookingLineItem, BookingState, BookingStateMachine,
+│                        Payment, Refund, Reversal, LedgerEntry, Guest
 │
-├── application
-│   ├── onboarding       PropertyOnboardingService, InventoryMaterializer
-│   ├── search           PropertySearchService, SearchFilterChain
-│   ├── booking          BookingService, InventoryReservationService,
-│   │                    InventoryLockRegistry
-│   ├── payment          PaymentService, PaymentGatewayRouter,
-│   │                    IdempotencyService, ReconciliationService
-│   ├── cancellation     CancellationService, RefundService, ReversalService
-│   ├── ledger           LedgerService
-│   └── notification     NotificationDispatcher
+├── dto                  Request/response payloads for the API layer. Controllers accept
+│                        and return these, never entities, so Long ids and JPA
+│                        relationships never leak over the wire.
+│                        ApiRequest, ApiResponse, ApiError, ResponseStatus, per-endpoint
+│                        request/response records
 │
-├── infrastructure
-│   ├── persistence
-│   │   ├── entity       JPA entities (separate from domain model)
-│   │   ├── repository   JPA repository implementations
-│   │   └── mapper       domain ↔ entity mapping
-│   ├── gateway          MockCardProvider, MockUpiProvider, MockWalletProvider,
-│   │                    GatewayResilienceConfig
-│   ├── crypto           HmacSigner, HmacVerifier, ReplayGuard
-│   ├── webhook          WebhookEventLogStore, OutboundWebhookSender
-│   └── notification     MockEmailChannel, MockSmsChannel
+├── repository           One Spring Data JpaRepository<Entity, Long> interface per
+│                        aggregate, plus a lookup by that aggregate's business uid.
+│                        BookingRepository, PropertyRepository, RoomTypeRepository,
+│                        DailyInventoryRepository, GuestRepository, PaymentRepository,
+│                        LedgerEntryRepository
 │
-├── api
+├── service              Use-case orchestration: coordinates entities, repositories and
+│                        transactions. Where PricingStrategy, RefundPolicy,
+│                        PaymentGatewayProvider and the reservation/reconciliation logic
+│                        live.
+│                        PropertyOnboardingService, InventoryMaterializer,
+│                        PropertySearchService, SearchFilterChain, BookingService,
+│                        InventoryReservationService, PaymentService,
+│                        PaymentGatewayRouter, IdempotencyService,
+│                        ReconciliationService, CancellationService, RefundService,
+│                        ReversalService, LedgerService, NotificationDispatcher
+│
+├── controller
 │   ├── admin            PropertyAdminController, InventoryAdminController,
 │   │                    LedgerAdminController, ReversalAdminController
 │   ├── user             SearchController, BookingController,
 │   │                    PaymentController, CancellationController
 │   ├── webhook          PaymentWebhookController
-│   ├── envelope         ApiRequest, ApiResponse, ApiError, ResponseStatus
-│   ├── dto              request/response payloads
 │   └── advice           GlobalExceptionHandler, ResponseEnvelopeAdvice
 │
-└── config               ResilienceConfig, VirtualThreadConfig,
-                         SeedDataLoader, ClockConfig
+├── exception            DomainException hierarchy, each carrying a stable error code
+│
+├── gateway/crypto/webhook/notification   Mock payment gateways, HMAC signing/
+│                        verification, webhook event log, outbound webhook delivery,
+│                        mock email/SMS channels. (Package boundaries to be finalised
+│                        when Phase 4/7 build these out — flat siblings of the above,
+│                        not nested under an "infrastructure" umbrella.)
+│
+└── config               ResilienceConfig, VirtualThreadConfig, SeedDataLoader, a
+                         java.time.Clock bean (see 4.5)
 
-Note on duplicate models: domain model and JPA entity are kept separate with an explicit mapper. This costs boilerplate but keeps domain framework-free, which is the point of the layering. Stated as a conscious trade-off in the README.
+On the flattened shape: earlier revisions of this document nested everything under domain / application / infrastructure / api specifically to keep the domain package framework-free and to make the ports-and-adapters boundary visible in the folder structure. With that boundary gone (0.1), the nesting no longer signals anything — entity, repository, service and controller are peers in a conventional layered Spring Boot application, and the flat structure says so plainly.
 
 3. Domain Model
 3.1 Ownership hierarchy
@@ -112,33 +118,27 @@ Owner (account)
 
 Single-property owners take the identical path. They are assigned a PropertyGroup containing exactly one Property. No branching, no if (isChain) anywhere in the codebase. This is the direct answer to the brief's requirement.
 On the Composite pattern: this is a uniform one-to-many hierarchy, not textbook Composite. Composite exists to allow arbitrary nesting of node and leaf behind one interface — a hotel does not contain hotels, so that nesting requirement is absent. Using full Composite here would be unjustifiable decoration. This distinction is stated explicitly because it is likely to be probed.
-3.2 Value objects
-Value object
-Contents
-Key behaviour
-DateRange
-checkIn, checkOut
-nights() → list of stay dates (checkout exclusive); overlaps(other); nightCount(). Validates checkOut > checkIn on construction.
-Money
-amount (BigDecimal), currency
-add, subtract, percentage, isNegative. Never a raw double.
-Location
-city, locality, lat, lng
-Normalised city casing for search matching.
-GuestCount
-adults, children
-total(); validates adults >= 1.
-UnitCount
-value
-Rooms requested. Validates >= 1; caps at a configured per-booking maximum. Typed so it cannot be confused with GuestCount.
-InventoryKey
-roomTypeId, stayDate
-Lock identity and unique-constraint identity. Comparable by date — see Section 5.3.
-BookingId, PaymentId, MsgId
-typed wrappers
-Prevents passing a booking id where a payment id belongs.
+3.2 Identity: the two-id convention (revised — see 0.1)
+There are no value objects and no typed identifiers in the current design. Every top-level entity instead carries two ids:
+Id
+Type
+Purpose
+id
+Long, @GeneratedValue(IDENTITY)
+The database primary key. Internal only — never serialised into a response, never accepted from a request, never logged. This is what JPA relationships (@ManyToOne, @JoinColumn) reference internally.
+"*Uid" (e.g. bookingUid, propertyUid)
+String (UUID), assigned in @PrePersist, unique + updatable = false
+What every API, log line and repository lookup actually uses. Generated once, at persist time, and never changes.
 
-DateRange.nights() is the single place a date range becomes discrete nights. It is used by both inventory materialisation (Section 4) and reservation (Section 5). One implementation, one set of tests, no duplication of the checkout-exclusive rule.
+Why two ids rather than one: a bare auto-increment Long exposed over an API leaks information (row counts, growth rate, existence-by-guessing — request id 41982, then 41983) and cannot be generated before the row is inserted, which matters once idempotent retry needs a stable reference id before the first persist attempt. A UUID solves both, but using it as the actual database primary key costs index locality and row size versus a Long — so the Long stays as the storage-internal PK and the UUID becomes the boundary-facing identity. This is the standard "surrogate key + natural/business key" pattern, applied uniformly.
+Two deliberate exceptions:
+BookingLineItem has only a Long id. Nothing ever looks up a line item on its own — it is always reached through its parent Booking — so a second id would be a synthetic identifier with no caller.
+DailyInventory has only a Long id, no UUID. Its real, externally-meaningful key is the (roomTypeId, stayDate) pair, enforced as a unique constraint — inventing a UUID here would be a business key nothing would ever use to look it up.
+What this replaces: the value objects that previously lived here (DateRange, Money, UnitCount, GuestCount, Location, and the typed id wrappers BookingId/PaymentId/MsgId/etc.) validated themselves at construction and made an invalid instance unconstructable. That guarantee is gone. In its place:
+DateRange's behaviour (checkout-exclusive night expansion, the 30-night cap) now lives directly on Booking as nights(), nightCount() and validateDateRange(), the latter enforced via @PrePersist/@PreUpdate rather than a constructor.
+Simple range/positivity rules (units 1–10, adults ≥ 1, children ≥ 0, checkIn/checkOut not null) are Bean Validation annotations (@Min, @Max, @NotNull) on the entity fields — enforced once a controller validates an incoming DTO with @Valid, not at object-construction time. A Booking built via its Lombok builder with invalid field values is constructable; it simply fails validation before use.
+Money's type-safe currency handling has no replacement. amount and currency are plain BigDecimal/String fields with no compile-time or runtime guard against mixing currencies in arithmetic. Stated plainly rather than left for a reviewer to discover: this is a real capability loss versus the value-object version, accepted because the system is single-currency (INR) at this scope.
+Booking.nights() (formerly DateRange.nights()) remains the single place a date range becomes discrete nights, used by both inventory materialisation (Section 4) and reservation (Section 5). That property survived the revision even though the type it lived on did not.
 3.3 Booking state machine
                    ┌──────────────────────────────────┐
                     │                                  ▼
@@ -174,26 +174,30 @@ private static final Map<BookingState, Set<BookingState>> ALLOWED = Map.of(
 );
 
 Illegal transitions throw InvalidStateTransitionException. Idempotent re-application of the current state is a no-op, not an error — required so a duplicated webhook does not fail loudly (Section 8c).
+BookingStateMachine itself is a stateless utility with static methods (canTransition, assertCanTransition, isTerminal, allowedFrom), not an injected Spring bean — the port/adapter split that used to justify making it an instantiable, injectable component is gone (0.1), and a pure transition-table lookup has no state to inject in the first place.
 Inventory is released on: CANCELLED, EXPIRED, PAYMENT_FAILED, REVERSED.
 PAYMENT_UNKNOWN is the design centrepiece. When the circuit breaker is open or the gateway times out, the payment did not fail — the outcome is unobserved. Modelling this as a distinct state rather than collapsing it into PAYMENT_FAILED is what makes reconciliation and reversal coherent rather than hypothetical.
 3.4 Booking Composition — Multi-Unit and Per-Night Pricing
 A booking is not one room for one flat price. It is N units across M nights, each night priced independently.
-Booking
-  id, guestId, propertyId, roomTypeId
-  dateRange         DateRange
-  units             UnitCount        e.g. 2 Deluxe rooms
-  guestCount        GuestCount
-  holdExpiresAt     Instant          see 4.4
-  totalAmount       Money            = sum(lineItems)
-  lineItems         List<BookingLineItem>
-  state             BookingState
-  version           long             optimistic lock
+Booking                                 (JPA entity — see 3.2 for the id/bookingUid pair)
+  id, bookingUid
+  guestId, propertyId, roomTypeId       Long — reference only, no @ManyToOne to Guest (12.6.3)
+  checkIn, checkOut                     LocalDate       property-local (see 4.5)
+  units                                 int             e.g. 2 Deluxe rooms; @Min(1) @Max(10)
+  adults, children                      int             @Min(1) on adults
+  holdExpiresAt                         Instant         see 4.4
+  totalAmount, currency                 BigDecimal, String   = sum(lineItems); see 3.2 on losing Money
+  lineItems                             List<BookingLineItem>   @OneToMany, cascade ALL
+  state                                 BookingState
+  version                               Long            @Version — JPA-managed optimistic lock,
+                                                         no hand-rolled increment/compare
 
-BookingLineItem                       one per night
-  stayDate          LocalDate         property-local (see 4.5)
+BookingLineItem                         one per night (JPA entity — Long id only, see 3.2)
+  booking           @ManyToOne
+  stayDate          LocalDate
   units             int
-  pricePerUnit      Money             SNAPSHOT at booking time
-  lineTotal         Money             = pricePerUnit × units
+  pricePerUnit      BigDecimal        SNAPSHOT at booking time
+  lineTotal         BigDecimal        = pricePerUnit × units
 
 3.4.1 Why line items rather than a computed total
 Price is captured at booking time, never recalculated. A later rate change on daily_inventory must not alter the amount owed on an existing booking. Without line items the only options are recomputing (wrong) or storing a bare total (unauditable — no answer to "why is this ₹34,000?").
@@ -204,7 +208,7 @@ Handling
 Availability
 Every night needs booked_units + units <= total_units, not merely < total_units
 Guest capacity
-units × roomType.maxGuests >= guestCount.total() — validated at booking
+units × roomType.maxGuests >= (adults + children) — validated at booking
 Inventory decrement
 +units per night, not +1
 Release on cancel/expire
@@ -266,7 +270,7 @@ Correct for production, most code.
 Chosen knowingly. README states that production would use a rolling-window job plus lazy creation beyond the horizon, and that the lazy path introduces an insert race requiring INSERT ... ON DUPLICATE KEY semantics.
 4.2.1 Where PricingStrategy attaches
 public interface PricingStrategy {
-    Money priceFor(RoomType roomType, LocalDate stayDate);
+    BigDecimal priceFor(RoomType roomType, LocalDate stayDate);   // in the property's currency
     String strategyCode();
 }
 
@@ -310,9 +314,10 @@ Resolved against property-local date, which is what a hotel night actually means
 Hold expiry and sweeper comparisons
 holdExpiresAt is an Instant; checkout comparison uses property-local date
 Test determinism
-A fixed Clock is injected everywhere. No Instant.now() or LocalDate.now() anywhere in domain code.
+A single java.time.Clock @Bean (config.ClockConfig) is injected wherever "now" is needed; tests substitute a fixed Clock. No bare Instant.now() or LocalDate.now() in service-layer code.
 
 A stay date is a calendar concept, not a timestamp — a hotel night is "the night of the 14th" regardless of the observer's timezone. Storing it as an instant would be the modelling error.
+Revised (see 0.1): the earlier design wrapped this in a dedicated PropertyClock port (with a SystemPropertyClock adapter and a FixedPropertyClock test double) specifically so the framework-free domain package could resolve "today" without importing java.time.Clock's Spring-managed lifecycle. With that boundary gone, the extra interface has no remaining job — services now inject java.time.Clock directly, and tests substitute a fixed Clock bean or construct one inline. Booking.onCreate() is the one place that still calls Instant.now() directly rather than taking a Clock, because it is a JPA lifecycle callback with no constructor-injection point; this is a stated, narrow exception, not a return to bare now() calls throughout the codebase.
 
 5. Concurrency and Thread Safety
 5.1 The actual problem
@@ -366,7 +371,8 @@ Layer
 Mechanism
 Role
 1. In-JVM lock (optional fast path)
-ConcurrentHashMap<InventoryKey, ReentrantLock>
+ConcurrentHashMap<LockKey, ReentrantLock> — LockKey(roomTypeId, stayDate) a small
+service-private record, not a shared domain type (see 3.2 on the removal of InventoryKey)
 Serialises same-key contenders before they reach the DB, avoiding round trips that would return rowsAffected = 0. Not the correctness mechanism.
 2. Atomic conditional UPDATE
 5.2.1
@@ -383,7 +389,7 @@ Thread A books 10–12: holds lock on 10th, requests 11th
 Thread B books 11–13: holds lock on 11th, requests 10th   → circular wait
 
 On MySQL this surfaces as ERROR 1213 Deadlock found; on H2 as a lock-timeout exception. Either way one transaction is sacrificed — and the failure is load-dependent, so it will not show up in single-threaded testing.
-Mechanism: total ordering on lock acquisition. All nights are locked in ascending (roomTypeId, stayDate) order, always. InventoryKey implements Comparable, and InventoryReservationService sorts dateRange.nights() before the loop. Circular wait becomes structurally impossible.
+Mechanism: total ordering on lock acquisition. All nights are locked in ascending (roomTypeId, stayDate) order, always. InventoryReservationService sorts booking.nights() before the loop and pairs each date with the room type id to get that ordering — a private Comparable LockKey record local to the service (see 5.2.4), not a shared domain value type. Circular wait becomes structurally impossible.
 This applies identically to the in-JVM locks of 5.2.4 layer 1 and to the DB row locks — one ordering discipline, enforced in one place, covering both.
 Secondary defence: a bounded retry on genuine deadlock/lock-timeout exceptions (3 attempts, jittered backoff), because ordering protects the reservation path but cannot guarantee no other statement in the system ever interleaves badly.
 Tested by deadlockAvoidance (§15): two threads booking overlapping ranges from opposite ends; both must complete within timeout, neither sacrificed.
@@ -397,7 +403,7 @@ The DB row lock is held only for the statement plus the remainder of the transac
 Lock held across I/O
 Forbidden. The payment gateway call happens strictly outside any inventory lock. Holding a lock across a multi-second remote call is how throughput dies.
 Lock map growth
-Locks are per InventoryKey; entries reclaimed once uncontended (weak-valued map or explicit cleanup after release)
+Locks are per LockKey (5.2.4); entries reclaimed once uncontended (weak-valued map or explicit cleanup after release)
 Fairness
 Fair ReentrantLock on the reservation path so a thread cannot be starved indefinitely under sustained contention
 
@@ -471,7 +477,7 @@ Every legitimate use is already handled by a library in the stack. These are low
 5.7.3 The one place in-memory atomicity genuinely matters
 lockRegistry.computeIfAbsent(key, k -> new ReentrantLock(true));
 
-ConcurrentHashMap.computeIfAbsent is atomic. That atomicity is what prevents two threads from creating two different ReentrantLock instances for the same InventoryKey — which would silently defeat the entire locking scheme in Section 5.2 while appearing to work.
+ConcurrentHashMap.computeIfAbsent is atomic. That atomicity is what prevents two threads from creating two different ReentrantLock instances for the same LockKey — which would silently defeat the entire locking scheme in Section 5.2 while appearing to work.
 The critical concurrency primitive in this design is a method contract, not a keyword.
 5.7.4 Position
 volatile provides visibility, not atomicity. The consistency problem here is not visibility between threads sharing a heap variable — it is a compound check-then-act over state that lives in the database. That is solved with a row lock plus a check constraint. Sprinkling volatile or atomics around would signal reaching for remembered primitives rather than matching the tool to the actual problem.
@@ -732,23 +738,26 @@ enum ReversalReason {
 Scenario 2 is the one that gives the circuit breaker and PAYMENT_UNKNOWN a complete story: breaker open → unknown state → reconciliation → hold already gone → reverse.
 9.3 Refund policy — Strategy
 public interface RefundPolicy {
-    Money calculate(Booking booking, Instant cancelledAt);
+    BigDecimal calculate(Booking booking, Instant cancelledAt);   // in booking.getCurrency()
     String policyCode();
 }
 
 Implementations: FullRefundBefore48Hours, FiftyPercentBefore24Hours, NoRefundAfterCheckIn. Resolved per property group via RefundPolicyFactory, so different chains can carry different policies — directly satisfying the brief's "pluggable" requirement.
 9.4 Ledger — simplified, append-only, immutable
-public record LedgerEntry(
-    LedgerEntryId id,
-    BookingId     bookingId,
-    PaymentId     paymentId,        // nullable for adjustments
-    EntryType     type,             // CHARGE | REFUND | REVERSAL | ADJUSTMENT
-    Money         amount,           // always positive
-    Direction     direction,        // CREDIT (in) | DEBIT (out)
-    String        providerReference,
-    Instant       occurredAt,
-    String        correlationId
-) {}
+@Entity
+class LedgerEntry {                 // Long id + ledgerEntryUid (see 3.2); rows never updated
+    Long          id;
+    String        ledgerEntryUid;
+    Long          bookingId;
+    Long          paymentId;        // nullable for adjustments
+    EntryType     type;             // CHARGE | REFUND | REVERSAL | ADJUSTMENT
+    BigDecimal    amount;           // always positive
+    String        currency;
+    Direction     direction;        // CREDIT (in) | DEBIT (out)
+    String        providerReference;
+    Instant       occurredAt;
+    String        correlationId;
+}
 
 Never UPDATE. Never DELETE. Corrections are new entries.
 Why it earns a place despite not being requested:
@@ -795,7 +804,7 @@ public interface SearchFilter {
 Implementations: CityFilter, LocalityFilter, PriceRangeFilter, AmenityFilter, StarRatingFilter, GuestCapacityFilter, AvailabilityFilter.
 SearchFilterChain receives List<SearchFilter> by injection, sorts by order(), and applies in sequence. Adding a filter is one new @Component and zero changes elsewhere — the brief's explicit requirement that new filters not require reworking search.
 AvailabilityFilter runs last and is the only one touching inventory. It verifies booked_units + requestedUnits <= total_units for every night in the requested range — note + requestedUnits, not < total_units: a search for 2 rooms must exclude a property with only 1 free. A property with even one insufficient night in the range is excluded.
-GuestCapacityFilter validates requestedUnits × roomType.maxGuests >= guestCount.total().
+GuestCapacityFilter validates requestedUnits × roomType.maxGuests >= (adults + children).
 PriceRangeFilter sums price_per_unit × units across the requested nights and compares the stay total, not a nightly rate — with per-night pricing (4.2.1), a nightly comparison would give inconsistent results across a weekend boundary.
 10.2 Ordering rationale
 Cheap in-memory predicates (city, star rating, capacity) run before the inventory query, so the expensive availability check operates on the smallest candidate set. Stated because filter ordering as a performance decision is a reasonable thing to be asked about.
@@ -892,7 +901,7 @@ USER
 SYSTEM
   POST   /api/v1/webhooks/payment/{providerCode} inbound callback
 
-Mirrored in packages (api/admin, api/user, api/webhook) so the separation is structural, not merely a URL convention.
+Mirrored in packages (controller.admin, controller.user, controller.webhook — see 2.3) so the separation is structural, not merely a URL convention.
 Authorisation is out of scope per the brief. A @RequireRole(ADMIN) annotation with a trivially-stubbed interceptor is included, plus one README line: role separation is structural; enforcement stubbed since authz is out of scope. The thinking is demonstrated without spending hours on Spring Security.
 
 12. Webhooks and Cryptography
@@ -1034,6 +1043,7 @@ CREATE TABLE daily_inventory (
 
 CREATE TABLE booking (
   id              BIGINT  PRIMARY KEY AUTO_INCREMENT,
+  booking_uid     CHAR(36) NOT NULL,         -- what every API/lookup actually uses (3.2)
   guest_id        BIGINT  NOT NULL,          -- reference only; no PII inline (12.6.3)
   property_id     BIGINT  NOT NULL,
   room_type_id    BIGINT  NOT NULL,
@@ -1049,7 +1059,8 @@ CREATE TABLE booking (
   created_at      TIMESTAMP     NOT NULL,
   CONSTRAINT ck_dates      CHECK (check_out > check_in),
   CONSTRAINT ck_units      CHECK (units >= 1),
-  CONSTRAINT ck_adults     CHECK (adults >= 1)
+  CONSTRAINT ck_adults     CHECK (adults >= 1),
+  CONSTRAINT uq_booking_uid UNIQUE (booking_uid)
 );
 
 CREATE TABLE booking_line_item (
@@ -1063,6 +1074,7 @@ CREATE TABLE booking_line_item (
 );
 
 Notes on specific choices:
+booking_uid (and the equivalent *_uid column on every other top-level table — property, room_type, guest, payment, ledger_entry, none shown above since their schemas are built in later phases) is the two-id convention of 3.2: id is the storage-internal surrogate key, booking_uid is what every API and lookup actually uses. daily_inventory is the deliberate exception — its natural key is (room_type_id, stay_date), already enforced below by uq_inventory_slot, so it gets no separate uid column.
 ck_not_overbooked is the correctness backstop of 5.2.4 layer 3 — the database refuses to overbook regardless of application logic, including from a hand-written query.
 No version on daily_inventory. The atomic conditional UPDATE (5.2.1) needs none, and an unread column invites a question with no good answer.
 uq_line_night prevents two line items for the same night on one booking — a duplicate would silently double the total.
@@ -1119,14 +1131,11 @@ Finite State Machine
 BookingStateMachine + transition table
 Brief demands "well-defined state transitions"
 Repository
-All persistence ports
-Brief mandates it explicitly
+Spring Data JpaRepository<Entity, Long> per aggregate (repository.*)
+Brief mandates it explicitly; auto-implemented rather than hand-wired through a port and adapter (see 0.1)
 Builder
-Property, Booking, SearchCriteria
+Property, Booking, SearchCriteria (Lombok @Builder)
 Many optional fields; keeps constructors sane
-Value Object
-DateRange, Money, Location, GuestCount, typed ids
-Brief names value objects under Domain Modelling
 SPI / provider registry
 PaymentGatewayProvider + router
 Multi-bank integration; new provider = one class
@@ -1143,6 +1152,8 @@ Single property as group-of-one; no branching
 14.1 Patterns deliberately excluded
 Pattern
 Why not
+Value Object
+Used for DateRange, Money, UnitCount, GuestCount, Location and typed ids in an earlier revision (see 0.1), then deliberately removed: their validation moved onto the entity directly or became a Bean Validation annotation, in exchange for a simpler, more conventional entity layer at the cost of Money's compile-time currency-mismatch guarantee (3.2). Listed here rather than silently dropped from the pattern table, because a reviewer who compares this document against an earlier version should find the change explained, not just absent.
 Abstract Factory
 Solves "create matched sets of related objects across product families." There is one family here, not families of families. Using it would be unjustifiable over-engineering, and the justification would not survive a follow-up question. Plain Factory is correct.
 Hand-rolled Singleton
@@ -1231,7 +1242,7 @@ Where it would go in production
 Microservices
 Split along property-catalog / inventory / booking / payment. Booking↔inventory↔payment currently share a transaction boundary; splitting them requires a saga with compensating actions — the reversal machinery in Section 9 is exactly that compensation, already modelled.
 gRPC
-Inter-service calls once split. Ports in domain/port are the exact interfaces that would become gRPC stubs.
+Inter-service calls once split. There is no pre-existing port interface to promote (0.1 dropped that layer) — extracting a service means defining a gRPC contract from the relevant service-layer method signatures directly and wrapping the existing service class as its implementation, which is mechanical but is genuinely a new step rather than a reuse of something already in place.
 Kafka + Avro + DLQ
 The domain events already published in-process (BookingConfirmedEvent, PaymentSettledEvent) become topic messages. Avro schemas with a registry for contract evolution; DLQ for poison messages after bounded retry. Notification and reporting become consumers.
 Redis
@@ -1253,8 +1264,8 @@ Not in the rubric. Added last, only if tests and README are complete.
 
 
 17. Implementation Plan
-Phase 1 — Domain core (highest rubric weight)
-Value objects (DateRange first — everything depends on nights(); then Money, UnitCount, GuestCount, typed ids), entities including Booking + BookingLineItem (3.4), BookingState + transition table, injected Clock and property-local date resolution (4.5), domain exceptions, repository port interfaces. Unit tests for the FSM, DateRange and property-local dates as they are written.
+Phase 1 — Entity core (highest rubric weight; revised mid-course, see 0.1)
+Built initially as a framework-free domain model (value objects, typed ids, repository ports) per the original plan below, then reworked into the current shape: JPA entities directly (Booking + BookingLineItem per 3.4, plus placeholder aggregates for Property/RoomType/DailyInventory/Guest/Payment/LedgerEntry sufficient to give each Spring Data repository a concrete target), BookingState + BookingStateMachine as a static transition-table utility, the exception hierarchy, and one JpaRepository interface per aggregate. Unit tests for the FSM (full state-pair cartesian product), Booking's date-range validation, and Bean Validation constraints — plus, since persistence is no longer a separate later concern, a @DataJpaTest proving identity-generated ids, auto-assigned business uids and the uid uniqueness constraint actually work against embedded H2.
 Phase 2 — Onboarding, inventory and pricing
 Ownership hierarchy, PropertyOnboardingService, InventoryMaterializer, PricingStrategy implementations writing price_per_unit (4.2.1), reprice and rate-override admin endpoints, H2 schema with all constraints and indexes, seed fixture.
 Phase 3 — Booking, reservation and locking (the differentiator)
