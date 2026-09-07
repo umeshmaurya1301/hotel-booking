@@ -1,0 +1,56 @@
+spring:
+  application:
+    name: hotel-booking
+
+  datasource:
+    url: jdbc:h2:mem:hotelbooking;MODE=MySQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  jpa:
+    # Schema is generated from the entity annotations - they are the single source of
+    # truth for constraints and indexes (see design doc 13.2/13.3). The hand-written
+    # MySQL DDL in the design document is a reference artefact, not the live schema.
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+inventory:
+  # Nights of inventory materialised ahead at onboarding time (design doc 4.2).
+  horizon-days: 90
+  default-pricing-strategy: FLAT
+
+pricing:
+  weekend:
+    multiplier: 1.25
+    days:
+      - FRIDAY
+      - SATURDAY
+  seasonal:
+    - label: NEW_YEAR
+      from: 2026-12-20
+      to: 2027-01-02
+      multiplier: 1.60
+    - label: DIWALI
+      from: 2026-11-06
+      to: 2026-11-12
+      multiplier: 1.40
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.umesh.hotelbooking: INFO
