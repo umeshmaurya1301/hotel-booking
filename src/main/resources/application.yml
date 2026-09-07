@@ -3,7 +3,11 @@ spring:
     name: hotel-booking
 
   datasource:
-    url: jdbc:h2:mem:hotelbooking;MODE=MySQL;DB_CLOSE_DELAY=-1
+    # LOCK_TIMEOUT: how long a statement waits for a row lock before giving up. The
+    # reservation path deliberately contends on the same room-night row, so contenders must
+    # queue rather than fail instantly; a bounded retry (see booking.retry) covers whatever
+    # still times out under heavy contention.
+    url: jdbc:h2:mem:hotelbooking;MODE=MySQL;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=5000
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
@@ -28,6 +32,27 @@ inventory:
   # Nights of inventory materialised ahead at onboarding time (design doc 4.2).
   horizon-days: 90
   default-pricing-strategy: FLAT
+  lock:
+    # The in-JVM lock of design doc 5.2.4 layer 1. A throughput optimisation that serialises
+    # same-key contenders before they reach the database, NOT the correctness mechanism -
+    # that is the atomic conditional UPDATE plus the check constraint. Turning this off must
+    # not allow an overbooking, and a test asserts exactly that.
+    enabled: true
+    timeout: 2s
+
+booking:
+  # How long a created booking holds its rooms before the sweeper releases them (4.4).
+  hold-ttl: 15m
+  sweeper:
+    enabled: true
+    fixed-delay: 60s
+  retry:
+    # Bounded retry on genuine lock timeouts / deadlocks (5.3, secondary defence). Total
+    # ordering on (roomTypeId, stayDate) is what prevents deadlock; this covers the case
+    # where some other statement still interleaves badly.
+    max-attempts: 3
+    initial-delay: 25ms
+    max-delay: 250ms
 
 pricing:
   weekend:

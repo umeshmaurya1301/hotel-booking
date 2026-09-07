@@ -137,10 +137,11 @@ public class Booking {
      * checkout day is not one. Enforced here, not left to the caller, so it can't be
      * bypassed by constructing a Booking directly via the builder.
      *
-     * <p>Package-private (not {@code private}) so unit tests in this package can exercise it
-     * directly without going through a real persistence context to trigger {@code @PrePersist}.
+     * <p>Public, not just a lifecycle callback, so the booking service can reject a bad range
+     * up front — before any inventory is reserved — rather than discovering it at flush time
+     * with room-nights already held.
      */
-    void validateDateRange() {
+    public void validateDateRange() {
         if (checkIn == null || checkOut == null) {
             throw new InvalidDateRangeException("checkIn and checkOut must not be null");
         }

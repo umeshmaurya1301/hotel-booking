@@ -1271,21 +1271,41 @@ Not in the rubric. Added last, only if tests and README are complete.
 
 
 16.1 Where the build has actually reached
-Phases 0 through 2 are built and tested; phases 3 onward are designed here but not yet
-written. What exists today: the scaffold and entity core (0/1, as revised in 0.1), and
+Phases 0 through 3 are built and tested; phases 4 onward are designed here but not yet
+written. What exists today: the scaffold and entity core (0/1, as revised in 0.1);
 onboarding, inventory materialisation and pricing (2) — the ownership hierarchy including
 the group-of-one rule, per-night DailyInventory rows with the check constraints of 5.2.4
 layer 3 enforced by the database, three pricing strategies behind a registry, the eager
 bounded-horizon materialiser, admin endpoints for onboarding/extend/reprice/rate-override,
-and a demo seed profile. What is not: reservation and locking (3), payments and resilience
-(4), refunds/reversals/ledger (5), the request/response envelope (6), webhooks and the data
-protection layer (7), and search (8).
+and a demo seed profile; and booking, reservation and locking (3) — the atomic conditional
+UPDATE of 5.2.1, total night ordering per 5.3, all-or-nothing multi-night reservation,
+multi-unit reservation, per-night price snapshots on line items, the optional in-JVM lock
+of 5.2.4 layer 1, and the BookingSweeper of 4.4 for hold expiry and CONFIRMED → COMPLETED.
+What is not: payments and resilience (4), refunds/reversals/ledger (5), the
+request/response envelope (6), webhooks and the data protection layer (7), and search (8).
 Two structural notes on what phase 2 added beyond the tree in 2.3: controllers are grouped
 by caller (controller.admin, controller.user, controller.webhook, controller.advice) as
 11.4 requires, and a minimal GlobalExceptionHandler mapping error codes to HTTP status was
 pulled forward from phase 6 — without it every domain exception surfaces as a 500, which
 would make the phase-2 endpoints look broken rather than scoped. The envelope itself is
 still phase 6, and adopting it will not change any controller (11.2).
+
+16.2 Phase 3 findings that change later phases
+Spring Framework 7 ships its own resilience annotations —
+org.springframework.resilience.annotation.Retryable, @ConcurrencyLimit and
+@EnableResilientMethods — in spring-context itself. @Retryable already provides bounded
+retries with exponential backoff, jitter, a maximum delay and per-exception include/exclude
+filtering, which is the whole of what 7.4 asks for, and it is what the reservation path uses
+today for lock-timeout retry. Taken with the Phase 0 finding that resilience4j-spring-boot4
+does not exist on Maven Central, Phase 4 should plan on the framework's own annotations plus
+a hand-written circuit breaker rather than assuming Resilience4j is available: @Retryable
+covers 7.4, @ConcurrencyLimit covers the bulkhead of 7.5, and the breaker of 7.1 is the one
+piece with no framework equivalent.
+A structural consequence worth recording: retry must wrap the transaction, not sit inside
+it, or every attempt after the first runs in a transaction that is already marked
+rollback-only. That is why booking creation is split across two beans — BookingService
+carries @Retryable and BookingCreator carries @Transactional. Annotating one method with
+both would leave the nesting to advisor ordering.
 
 17. Implementation Plan
 Phase 1 — Entity core (highest rubric weight; revised mid-course, see 0.1)
