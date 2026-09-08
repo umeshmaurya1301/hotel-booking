@@ -1,5 +1,7 @@
 package com.umesh.hotelbooking.exception;
 
+import com.umesh.hotelbooking.dto.ErrorCode;
+
 import java.time.LocalDate;
 
 /**
@@ -14,7 +16,7 @@ public final class InventoryLockTimeoutException extends DomainException {
     private static final long serialVersionUID = 1L;
 
     public InventoryLockTimeoutException(Long roomTypeId, LocalDate stayDate) {
-        super("INVENTORY_LOCK_TIMEOUT",
+        super(ErrorCode.INVENTORY_LOCK_TIMEOUT,
                 "Timed out waiting for the inventory lock on room type " + roomTypeId + " for " + stayDate);
     }
 }

@@ -84,7 +84,7 @@ class BookingSweeperTest extends AbstractBookingConcurrencyTestSupport {
         Fixture fixture = onboardRoomType("Expiry Hotel", 1);
         LocalDate night = fixture.firstNight();
 
-        BookingResponse booking = bookingService.create(new CreateBookingRequest(
+        BookingResponse booking = bookingService.create(freshMeta(), new CreateBookingRequest(
                 null, fixture.roomTypeUid(), night, night.plusDays(1), 1, 1, 0));
         assertThat(bookedUnits(fixture, night)).isEqualTo(1);
 
@@ -97,7 +97,7 @@ class BookingSweeperTest extends AbstractBookingConcurrencyTestSupport {
                 .as("the released night must be back on sale").isZero();
 
         // And genuinely bookable again by someone else — the point of releasing it.
-        assertThat(bookingService.create(new CreateBookingRequest(
+        assertThat(bookingService.create(freshMeta(), new CreateBookingRequest(
                 null, fixture.roomTypeUid(), night, night.plusDays(1), 1, 1, 0))).isNotNull();
     }
 
@@ -106,7 +106,7 @@ class BookingSweeperTest extends AbstractBookingConcurrencyTestSupport {
         clock().setTo(START);
         Fixture fixture = onboardRoomType("Live Hold Hotel", 1);
         LocalDate night = fixture.firstNight();
-        BookingResponse booking = bookingService.create(new CreateBookingRequest(
+        BookingResponse booking = bookingService.create(freshMeta(), new CreateBookingRequest(
                 null, fixture.roomTypeUid(), night, night.plusDays(1), 1, 1, 0));
 
         clock().advance(Duration.ofMinutes(14));
@@ -122,7 +122,7 @@ class BookingSweeperTest extends AbstractBookingConcurrencyTestSupport {
         clock().setTo(START);
         Fixture fixture = onboardRoomType("Multi Night Expiry Hotel", 2);
         LocalDate night = fixture.firstNight();
-        bookingService.create(new CreateBookingRequest(
+        bookingService.create(freshMeta(), new CreateBookingRequest(
                 null, fixture.roomTypeUid(), night, night.plusDays(3), 2, 2, 0));
 
         clock().advance(Duration.ofHours(1));
@@ -143,7 +143,7 @@ class BookingSweeperTest extends AbstractBookingConcurrencyTestSupport {
         clock().setTo(START);
         Fixture fixture = onboardRoomType("Race Hotel", 1);
         LocalDate night = fixture.firstNight();
-        BookingResponse booking = bookingService.create(new CreateBookingRequest(
+        BookingResponse booking = bookingService.create(freshMeta(), new CreateBookingRequest(
                 null, fixture.roomTypeUid(), night, night.plusDays(1), 1, 1, 0));
 
         confirm(booking);
@@ -166,7 +166,7 @@ class BookingSweeperTest extends AbstractBookingConcurrencyTestSupport {
         clock().setTo(START);
         Fixture fixture = onboardRoomType("Completion Hotel", 2);
         LocalDate night = fixture.firstNight();
-        BookingResponse booking = bookingService.create(new CreateBookingRequest(
+        BookingResponse booking = bookingService.create(freshMeta(), new CreateBookingRequest(
                 null, fixture.roomTypeUid(), night, night.plusDays(2), 1, 1, 0));
         confirm(booking);
 
@@ -182,7 +182,7 @@ class BookingSweeperTest extends AbstractBookingConcurrencyTestSupport {
         clock().setTo(START);
         Fixture fixture = onboardRoomType("Ongoing Stay Hotel", 2);
         LocalDate night = fixture.firstNight();
-        BookingResponse booking = bookingService.create(new CreateBookingRequest(
+        BookingResponse booking = bookingService.create(freshMeta(), new CreateBookingRequest(
                 null, fixture.roomTypeUid(), night, night.plusDays(5), 1, 1, 0));
         confirm(booking);
 
@@ -211,7 +211,7 @@ class BookingSweeperTest extends AbstractBookingConcurrencyTestSupport {
                 .isEqualTo(LocalDate.of(2026, 9, 8));
 
         // One night: checks in on the 8th, checks out on the 9th (property-local).
-        BookingResponse booking = bookingService.create(new CreateBookingRequest(
+        BookingResponse booking = bookingService.create(freshMeta(), new CreateBookingRequest(
                 null, fixture.roomTypeUid(), propertyToday, propertyToday.plusDays(1), 1, 1, 0));
         confirm(booking);
 

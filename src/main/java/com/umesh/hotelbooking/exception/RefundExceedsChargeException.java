@@ -1,5 +1,7 @@
 package com.umesh.hotelbooking.exception;
 
+import com.umesh.hotelbooking.dto.ErrorCode;
+
 import java.math.BigDecimal;
 
 /**
@@ -12,7 +14,7 @@ public final class RefundExceedsChargeException extends DomainException {
     private static final long serialVersionUID = 1L;
 
     public RefundExceedsChargeException(String bookingUid, BigDecimal attempted, BigDecimal remaining) {
-        super("REFUND_EXCEEDS_CHARGE",
+        super(ErrorCode.REFUND_EXCEEDS_CHARGE,
                 "Refund/reversal of " + attempted + " for booking " + bookingUid
                         + " exceeds the " + remaining + " remaining against its charges");
     }

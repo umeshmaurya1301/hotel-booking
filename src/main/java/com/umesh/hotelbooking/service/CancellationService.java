@@ -25,6 +25,7 @@ import com.umesh.hotelbooking.repository.BookingRepository;
 import com.umesh.hotelbooking.repository.PaymentRepository;
 import com.umesh.hotelbooking.repository.PropertyRepository;
 import com.umesh.hotelbooking.repository.RefundRepository;
+import com.umesh.hotelbooking.web.RequestMeta;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -82,14 +83,11 @@ public class CancellationService {
     }
 
     @Transactional
-    public CancellationResponse cancel(String bookingUid, CancelBookingRequest request) {
-        boolean hasMsgId = request.msgId() != null && !request.msgId().isBlank();
-        if (hasMsgId) {
-            // 1. Idempotency check on msgId.
-            var cached = idempotencyService.begin(request.msgId(), request, CancellationResponse.class);
-            if (cached.isPresent()) {
-                return cached.get();
-            }
+    public CancellationResponse cancel(String bookingUid, RequestMeta meta, CancelBookingRequest request) {
+        // 1. Idempotency check on msgId.
+        var cached = idempotencyService.begin(meta, request, CancellationResponse.class);
+        if (cached.isPresent()) {
+            return cached.get();
         }
 
         Booking booking = bookingRepository.findByBookingUid(bookingUid)
@@ -138,7 +136,7 @@ public class CancellationService {
                 .build());
         booking.transitionTo(BookingState.CANCELLED);
 
-        processRefund(refund, settledPayment, refundAmount, bookingUid);
+        processRefund(refund, settledPayment, refundAmount, bookingUid, meta.correlationId());
 
         CancellationResponse response = new CancellationResponse(
                 booking.getBookingUid(), booking.getState(), refund.getRefundUid(),
@@ -148,9 +146,7 @@ public class CancellationService {
         eventPublisher.publishEvent(new BookingCancelledEvent(
                 booking.getBookingUid(), refund.getRefundUid(), refundAmount, policy.policyCode(), now));
 
-        if (hasMsgId) {
-            idempotencyService.complete(request.msgId(), response);
-        }
+        idempotencyService.complete(meta.msgId(), response);
         return response;
     }
 
@@ -162,7 +158,8 @@ public class CancellationService {
      * <p>A zero-amount refund (a policy that grants nothing) skips the gateway and the ledger
      * entirely — there is nothing to move and nothing to record.
      */
-    private void processRefund(Refund refund, Payment settledPayment, BigDecimal refundAmount, String bookingUid) {
+    private void processRefund(Refund refund, Payment settledPayment, BigDecimal refundAmount, String bookingUid,
+                               String correlationId) {
         if (refundAmount.signum() == 0) {
             refund.transitionTo(RefundState.PROCESSING);
             refund.transitionTo(RefundState.COMPLETED);
@@ -180,7 +177,7 @@ public class CancellationService {
                 refund.setProviderReference(result.refundReference());
                 refund.transitionTo(RefundState.COMPLETED);
                 refund.setCompletedAt(Instant.now(clock));
-                ledgerService.recordRefund(refund);
+                ledgerService.recordRefund(refund, correlationId);
             } else {
                 refund.transitionTo(RefundState.FAILED);
                 log.warn("Refund {} for booking {} was not accepted by the gateway: {}",

@@ -25,6 +25,13 @@ import java.util.List;
  * Appends to the financial trail and enforces the one invariant it exists to protect (design
  * doc 9.4): {@code sum(REFUND) + sum(REVERSAL) <= sum(CHARGE)} per booking, checked before a
  * debit is written, never repaired after the fact.
+ *
+ * <p>Every {@code recordX} method takes the request's {@code correlationId} explicitly rather
+ * than defaulting it to the payment/refund/reversal's own business uid (design doc 9.6:
+ * {@code correlationId} threads through every audit record). Request-initiated writes get the
+ * originating request's correlation id; {@code PaymentReconciliationService}, which has no
+ * request in flight, generates one per sweep pass and reuses it across every entry that pass
+ * writes.
  */
 @Service
 public class LedgerService {
@@ -58,23 +65,23 @@ public class LedgerService {
     }
 
     @Transactional
-    public LedgerEntry recordCharge(Payment payment, Booking booking) {
+    public LedgerEntry recordCharge(Payment payment, Booking booking, String correlationId) {
         return append(booking.getId(), payment.getId(), EntryType.CHARGE, payment.getAmount(),
-                payment.getCurrency(), Direction.CREDIT, payment.getProviderReference(), payment.getPaymentUid());
+                payment.getCurrency(), Direction.CREDIT, payment.getProviderReference(), correlationId);
     }
 
     /** Caller must have already called {@link #assertWithinInvariant} for this amount. */
     @Transactional
-    public LedgerEntry recordRefund(Refund refund) {
+    public LedgerEntry recordRefund(Refund refund, String correlationId) {
         return append(refund.getBookingId(), refund.getPaymentId(), EntryType.REFUND, refund.getAmount(),
-                refund.getCurrency(), Direction.DEBIT, refund.getProviderReference(), refund.getRefundUid());
+                refund.getCurrency(), Direction.DEBIT, refund.getProviderReference(), correlationId);
     }
 
     /** Caller must have already called {@link #assertWithinInvariant} for this amount. */
     @Transactional
-    public LedgerEntry recordReversal(Reversal reversal) {
+    public LedgerEntry recordReversal(Reversal reversal, String correlationId) {
         return append(reversal.getBookingId(), reversal.getPaymentId(), EntryType.REVERSAL, reversal.getAmount(),
-                reversal.getCurrency(), Direction.DEBIT, reversal.getProviderReference(), reversal.getReversalUid());
+                reversal.getCurrency(), Direction.DEBIT, reversal.getProviderReference(), correlationId);
     }
 
     @Transactional(readOnly = true)

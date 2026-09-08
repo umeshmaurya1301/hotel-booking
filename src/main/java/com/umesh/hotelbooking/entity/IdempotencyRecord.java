@@ -1,5 +1,6 @@
 package com.umesh.hotelbooking.entity;
 
+import com.umesh.hotelbooking.web.ApiType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -55,4 +56,14 @@ public class IdempotencyRecord {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    /** Server-derived operation discriminator (design doc 11.3), stamped for audit. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "api_type", length = 40)
+    private ApiType apiType;
+
+    /** The request's server-generated trace handle (design doc 9.6: threads through every
+     * audit record, this one included). */
+    @Column(name = "correlation_id", length = 64)
+    private String correlationId;
 }

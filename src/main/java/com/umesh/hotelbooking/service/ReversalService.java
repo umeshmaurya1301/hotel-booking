@@ -72,7 +72,7 @@ public class ReversalService {
      * settled normally, discovered after the fact rather than caught by automation.
      */
     @Transactional
-    public Reversal reverseBooking(String bookingUid, ReversalReason reason) {
+    public Reversal reverseBooking(String bookingUid, ReversalReason reason, String correlationId) {
         Booking booking = bookingRepository.findByBookingUid(bookingUid)
                 .orElseThrow(() -> new BookingNotFoundException(bookingUid));
         Payment settledPayment = paymentRepository.findByBookingId(booking.getId()).stream()
@@ -80,11 +80,11 @@ public class ReversalService {
                 .findFirst()
                 .orElseThrow(() -> new InvalidPaymentStateException(
                         "Booking " + bookingUid + " has no settled payment to reverse"));
-        return reverse(settledPayment, booking, reason);
+        return reverse(settledPayment, booking, reason, correlationId);
     }
 
     @Transactional
-    public Reversal reverse(Payment payment, Booking booking, ReversalReason reason) {
+    public Reversal reverse(Payment payment, Booking booking, ReversalReason reason, String correlationId) {
         ledgerService.assertWithinInvariant(booking, payment.getAmount());
 
         Reversal reversal = reversalRepository.save(Reversal.builder()
@@ -104,7 +104,7 @@ public class ReversalService {
             if (result.outcome() == GatewayOutcome.SETTLED) {
                 reversal.setProviderReference(result.reversalReference());
                 reversal.transitionTo(ReversalState.COMPLETED);
-                ledgerService.recordReversal(reversal);
+                ledgerService.recordReversal(reversal, correlationId);
             } else {
                 reversal.transitionTo(ReversalState.FAILED);
                 log.warn("Reversal {} for booking {} was not accepted by the gateway: {}",

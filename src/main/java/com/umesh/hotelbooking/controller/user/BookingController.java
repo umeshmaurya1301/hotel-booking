@@ -1,8 +1,14 @@
 package com.umesh.hotelbooking.controller.user;
 
+import com.umesh.hotelbooking.dto.ApiRequest;
 import com.umesh.hotelbooking.dto.BookingResponse;
 import com.umesh.hotelbooking.dto.CreateBookingRequest;
 import com.umesh.hotelbooking.service.BookingService;
+import com.umesh.hotelbooking.web.Api;
+import com.umesh.hotelbooking.web.ApiContext;
+import com.umesh.hotelbooking.web.ApiType;
+import com.umesh.hotelbooking.web.RequireRole;
+import com.umesh.hotelbooking.web.Role;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,20 +28,26 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/user/bookings")
+@RequireRole(Role.USER)
 public class BookingController {
 
     private final BookingService bookingService;
+    private final ApiContext apiContext;
 
-    public BookingController(BookingService bookingService) {
+    public BookingController(BookingService bookingService, ApiContext apiContext) {
         this.bookingService = bookingService;
+        this.apiContext = apiContext;
     }
 
     @PostMapping
-    public ResponseEntity<BookingResponse> create(@Valid @RequestBody CreateBookingRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.create(request));
+    @Api(ApiType.CREATE_BOOKING)
+    public ResponseEntity<BookingResponse> create(@Valid @RequestBody ApiRequest<CreateBookingRequest> request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(bookingService.create(apiContext.toRequestMeta(), request.payload()));
     }
 
     @GetMapping("/{bookingUid}")
+    @Api(ApiType.GET_BOOKING)
     public BookingResponse get(@PathVariable String bookingUid) {
         return bookingService.find(bookingUid);
     }

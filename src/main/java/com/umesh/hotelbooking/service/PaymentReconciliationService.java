@@ -34,6 +34,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -94,10 +95,16 @@ public class PaymentReconciliationService {
         Instant now = Instant.now(clock);
         int inventoryReleased = releasePastHoldWindow(now);
 
+        // This scheduler has no HTTP request in flight to inherit a correlationId from, so it
+        // mints one for the whole pass and reuses it across every record the pass writes
+        // (design doc 9.6) — one sweep, one trace handle, rather than the payment's own uid
+        // standing in for a correlation id it does not actually carry.
+        String correlationId = UUID.randomUUID().toString();
+
         int checked = 0, settled = 0, failed = 0, manualReview = 0, pending = 0, errors = 0;
         for (Payment due : paymentRepository.findByStateAndNextAttemptAtBefore(PaymentState.UNKNOWN, now)) {
             checked++;
-            switch (reconcileOne(due.getId(), now)) {
+            switch (reconcileOne(due.getId(), now, correlationId)) {
                 case SETTLED -> settled++;
                 case FAILED -> failed++;
                 case MANUAL_REVIEW -> manualReview++;
@@ -144,7 +151,7 @@ public class PaymentReconciliationService {
 
     private enum Outcome { SETTLED, FAILED, MANUAL_REVIEW, PENDING, ERROR, SKIPPED }
 
-    private Outcome reconcileOne(Long paymentId, Instant now) {
+    private Outcome reconcileOne(Long paymentId, Instant now, String correlationId) {
         return transactionTemplate.execute(status -> {
             Payment payment = paymentRepository.findById(paymentId).orElse(null);
             if (payment == null || payment.getState() != PaymentState.UNKNOWN) {
@@ -155,7 +162,7 @@ public class PaymentReconciliationService {
             // asking and resolve, regardless of how many ladder attempts remain (7.6.2).
             if (payment.hasExceededDeadline(now, properties.autoReversalDeadline())) {
                 return resolveTerminal(payment, PaymentState.FAILED, BookingState.PAYMENT_FAILED, now,
-                        "auto-reversal deadline exceeded while PENDING; presuming failure");
+                        "auto-reversal deadline exceeded while PENDING; presuming failure", correlationId);
             }
 
             int nextAttemptNo = payment.getAttemptNo() + 1;
@@ -168,11 +175,11 @@ public class PaymentReconciliationService {
             }
 
             Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
-            return pollGateway(payment, booking, nextAttemptNo, now);
+            return pollGateway(payment, booking, nextAttemptNo, now, correlationId);
         });
     }
 
-    private Outcome pollGateway(Payment payment, Booking booking, int nextAttemptNo, Instant now) {
+    private Outcome pollGateway(Payment payment, Booking booking, int nextAttemptNo, Instant now, String correlationId) {
         GatewayCheckStatus checkStatus;
         String summary;
         try {
@@ -203,11 +210,11 @@ public class PaymentReconciliationService {
                 boolean stillHeld = !payment.isInventoryReleased();
                 payment.transitionTo(PaymentState.SETTLED);
                 payment.setNextAttemptAt(null);
-                ledgerService.recordCharge(payment, booking);
+                ledgerService.recordCharge(payment, booking, correlationId);
                 if (stillHeld) {
                     booking.transitionTo(BookingState.CONFIRMED);
                 } else {
-                    reversalService.reverse(payment, booking, ReversalReason.LATE_SUCCESS_ON_EXPIRED_BOOKING);
+                    reversalService.reverse(payment, booking, ReversalReason.LATE_SUCCESS_ON_EXPIRED_BOOKING, correlationId);
                 }
                 loggedAttemptNo = nextAttemptNo;
                 result = Outcome.SETTLED;
@@ -249,14 +256,14 @@ public class PaymentReconciliationService {
                 .nextAttemptAt(nextAttemptAt)
                 .gatewayStatus(checkStatus)
                 .responseSummary(summary)
-                .correlationId(payment.getPaymentUid())
+                .correlationId(correlationId)
                 .build());
 
         return result;
     }
 
     private Outcome resolveTerminal(Payment payment, PaymentState paymentOutcome, BookingState bookingOutcome,
-                                    Instant now, String reason) {
+                                    Instant now, String reason, String correlationId) {
         Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
         payment.transitionTo(paymentOutcome);
         payment.setNextAttemptAt(null);
@@ -269,7 +276,7 @@ public class PaymentReconciliationService {
                 .checkedAt(now)
                 .gatewayStatus(GatewayCheckStatus.FAILED)
                 .responseSummary(reason)
-                .correlationId(payment.getPaymentUid())
+                .correlationId(correlationId)
                 .build());
 
         log.warn("Payment {} resolved by deadline: {}", payment.getPaymentUid(), reason);
@@ -292,7 +299,7 @@ public class PaymentReconciliationService {
     }
 
     /** POST /api/v1/admin/payments/{id}/resolve — the human exit from MANUAL_REVIEW (7.6.3). */
-    public PaymentResponse resolveManualReview(String paymentUid, ResolveManualReviewRequest request) {
+    public PaymentResponse resolveManualReview(String paymentUid, ResolveManualReviewRequest request, String correlationId) {
         return transactionTemplate.execute(status -> {
             Payment payment = paymentRepository.findByPaymentUid(paymentUid)
                     .orElseThrow(() -> new PaymentNotFoundException(paymentUid));
@@ -310,9 +317,9 @@ public class PaymentReconciliationService {
             if (request.outcome() == PaymentState.SETTLED) {
                 // Same ordering as the automated ladder: the charge is real and must be
                 // recorded before any reversal of it, regardless of which way this goes.
-                ledgerService.recordCharge(payment, booking);
+                ledgerService.recordCharge(payment, booking, correlationId);
                 if (payment.isInventoryReleased()) {
-                    reversalService.reverse(payment, booking, ReversalReason.LATE_SUCCESS_ON_EXPIRED_BOOKING);
+                    reversalService.reverse(payment, booking, ReversalReason.LATE_SUCCESS_ON_EXPIRED_BOOKING, correlationId);
                 } else {
                     booking.transitionTo(BookingState.CONFIRMED);
                 }

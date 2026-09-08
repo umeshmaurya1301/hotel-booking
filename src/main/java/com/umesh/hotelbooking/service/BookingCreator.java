@@ -22,6 +22,7 @@ import com.umesh.hotelbooking.repository.DailyInventoryRepository;
 import com.umesh.hotelbooking.repository.GuestRepository;
 import com.umesh.hotelbooking.repository.PropertyRepository;
 import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.web.RequestMeta;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,6 +55,7 @@ public class BookingCreator {
     private final InventoryReservationService reservationService;
     private final BookingProperties bookingProperties;
     private final ApplicationEventPublisher eventPublisher;
+    private final IdempotencyService idempotencyService;
     private final Clock clock;
 
     public BookingCreator(RoomTypeRepository roomTypeRepository,
@@ -64,6 +66,7 @@ public class BookingCreator {
                           InventoryReservationService reservationService,
                           BookingProperties bookingProperties,
                           ApplicationEventPublisher eventPublisher,
+                          IdempotencyService idempotencyService,
                           Clock clock) {
         this.roomTypeRepository = roomTypeRepository;
         this.propertyRepository = propertyRepository;
@@ -73,11 +76,23 @@ public class BookingCreator {
         this.reservationService = reservationService;
         this.bookingProperties = bookingProperties;
         this.eventPublisher = eventPublisher;
+        this.idempotencyService = idempotencyService;
         this.clock = clock;
     }
 
+    /**
+     * Idempotent (design doc 8a) since Phase 6: every create is now guarded by {@code
+     * RequestMeta.msgId}, closing the one gap the earlier phases left — a retried create used
+     * to hold a second set of room-nights, since {@code CreateBookingRequest} carried no key
+     * to dedupe on before the envelope existed.
+     */
     @Transactional
-    public BookingResponse create(CreateBookingRequest request) {
+    public BookingResponse create(RequestMeta meta, CreateBookingRequest request) {
+        var cached = idempotencyService.begin(meta, request, BookingResponse.class);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
+
         RoomType roomType = roomTypeRepository.findByRoomTypeUid(request.roomTypeUid())
                 .orElseThrow(() -> new RoomTypeNotFoundException(request.roomTypeUid()));
         Property property = propertyRepository.findById(roomType.getProperty().getId())
@@ -134,7 +149,9 @@ public class BookingCreator {
                 saved.getBookingUid(), property.getPropertyUid(), roomType.getRoomTypeUid(),
                 saved.getUnits(), nights.size(), saved.getHoldExpiresAt(), now));
 
-        return toResponse(saved, guest.getGuestUid(), property.getPropertyUid(), roomType.getRoomTypeUid());
+        BookingResponse response = toResponse(saved, guest.getGuestUid(), property.getPropertyUid(), roomType.getRoomTypeUid());
+        idempotencyService.complete(meta.msgId(), response);
+        return response;
     }
 
     @Transactional(readOnly = true)

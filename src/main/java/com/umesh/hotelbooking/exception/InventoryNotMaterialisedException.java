@@ -1,5 +1,7 @@
 package com.umesh.hotelbooking.exception;
 
+import com.umesh.hotelbooking.dto.ErrorCode;
+
 import java.time.LocalDate;
 
 /**
@@ -14,7 +16,7 @@ public final class InventoryNotMaterialisedException extends DomainException {
     private static final long serialVersionUID = 1L;
 
     public InventoryNotMaterialisedException(String roomTypeUid, LocalDate stayDate) {
-        super("INVENTORY_NOT_MATERIALISED",
+        super(ErrorCode.INVENTORY_NOT_MATERIALISED,
                 "No inventory row for room type " + roomTypeUid + " on " + stayDate
                         + "; it may be beyond the materialised horizon");
     }

@@ -1,5 +1,7 @@
 package com.umesh.hotelbooking.exception;
 
+import com.umesh.hotelbooking.dto.ErrorCode;
+
 import java.util.Collection;
 
 /**
@@ -12,7 +14,7 @@ public final class UnknownPricingStrategyException extends DomainException {
     private static final long serialVersionUID = 1L;
 
     public UnknownPricingStrategyException(String requestedCode, Collection<String> knownCodes) {
-        super("UNKNOWN_PRICING_STRATEGY",
+        super(ErrorCode.UNKNOWN_PRICING_STRATEGY,
                 "No pricing strategy with code " + requestedCode + "; known codes are " + knownCodes);
     }
 }

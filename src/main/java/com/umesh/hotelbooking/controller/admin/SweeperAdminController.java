@@ -1,8 +1,16 @@
 package com.umesh.hotelbooking.controller.admin;
 
+import com.umesh.hotelbooking.dto.ApiRequest;
+import com.umesh.hotelbooking.dto.EmptyPayload;
 import com.umesh.hotelbooking.dto.SweepResponse;
 import com.umesh.hotelbooking.service.BookingSweeper;
+import com.umesh.hotelbooking.web.Api;
+import com.umesh.hotelbooking.web.ApiType;
+import com.umesh.hotelbooking.web.RequireRole;
+import com.umesh.hotelbooking.web.Role;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -14,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin/sweeper")
+@RequireRole(Role.ADMIN)
 public class SweeperAdminController {
 
     private final BookingSweeper bookingSweeper;
@@ -23,7 +32,8 @@ public class SweeperAdminController {
     }
 
     @PostMapping("/run")
-    public SweepResponse run() {
+    @Api(ApiType.RUN_SWEEPER)
+    public SweepResponse run(@Valid @RequestBody ApiRequest<EmptyPayload> request) {
         return bookingSweeper.sweep();
     }
 }

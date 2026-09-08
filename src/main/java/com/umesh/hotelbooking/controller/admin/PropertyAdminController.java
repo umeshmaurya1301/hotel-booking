@@ -1,9 +1,14 @@
 package com.umesh.hotelbooking.controller.admin;
 
+import com.umesh.hotelbooking.dto.ApiRequest;
 import com.umesh.hotelbooking.dto.OnboardPropertyRequest;
 import com.umesh.hotelbooking.dto.PropertyResponse;
 import com.umesh.hotelbooking.dto.UpdatePropertyRequest;
 import com.umesh.hotelbooking.service.PropertyOnboardingService;
+import com.umesh.hotelbooking.web.Api;
+import com.umesh.hotelbooking.web.ApiType;
+import com.umesh.hotelbooking.web.RequireRole;
+import com.umesh.hotelbooking.web.Role;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin/properties")
+@RequireRole(Role.ADMIN)
 public class PropertyAdminController {
 
     private final PropertyOnboardingService propertyOnboardingService;
@@ -33,17 +39,20 @@ public class PropertyAdminController {
     }
 
     @PostMapping
-    public ResponseEntity<PropertyResponse> onboard(@Valid @RequestBody OnboardPropertyRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(propertyOnboardingService.onboard(request));
+    @Api(ApiType.ONBOARD_PROPERTY)
+    public ResponseEntity<PropertyResponse> onboard(@Valid @RequestBody ApiRequest<OnboardPropertyRequest> request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(propertyOnboardingService.onboard(request.payload()));
     }
 
     @PatchMapping("/{propertyUid}")
+    @Api(ApiType.UPDATE_PROPERTY)
     public PropertyResponse update(@PathVariable String propertyUid,
-                                   @Valid @RequestBody UpdatePropertyRequest request) {
-        return propertyOnboardingService.update(propertyUid, request);
+                                   @Valid @RequestBody ApiRequest<UpdatePropertyRequest> request) {
+        return propertyOnboardingService.update(propertyUid, request.payload());
     }
 
     @GetMapping("/{propertyUid}")
+    @Api(ApiType.GET_PROPERTY)
     public PropertyResponse get(@PathVariable String propertyUid) {
         return propertyOnboardingService.findByUid(propertyUid);
     }

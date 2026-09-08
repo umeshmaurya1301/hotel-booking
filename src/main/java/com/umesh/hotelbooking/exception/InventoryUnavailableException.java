@@ -1,5 +1,7 @@
 package com.umesh.hotelbooking.exception;
 
+import com.umesh.hotelbooking.dto.ErrorCode;
+
 import java.time.LocalDate;
 
 /**
@@ -12,6 +14,6 @@ public final class InventoryUnavailableException extends DomainException {
     private static final long serialVersionUID = 1L;
 
     public InventoryUnavailableException(String roomTypeUid, LocalDate stayDate) {
-        super("INVENTORY_UNAVAILABLE", "No availability for room type " + roomTypeUid + " on " + stayDate);
+        super(ErrorCode.INVENTORY_UNAVAILABLE, "No availability for room type " + roomTypeUid + " on " + stayDate);
     }
 }

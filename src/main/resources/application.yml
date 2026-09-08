@@ -100,6 +100,14 @@ pricing:
       to: 2026-11-12
       multiplier: 1.40
 
+api:
+  # Contract version the server implements. Echoed in logs and compared against the
+  # envelope's `version` for observability only - a mismatch is recorded, never rejected.
+  # Rejecting on version skew would make every client upgrade a coordinated deploy.
+  version: v1
+  correlation-header: X-Correlation-Id
+  role-header: X-Role
+
 management:
   endpoints:
     web:
@@ -109,3 +117,5 @@ management:
 logging:
   level:
     com.umesh.hotelbooking: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{correlationId:-}] %logger{36} - %msg%n"

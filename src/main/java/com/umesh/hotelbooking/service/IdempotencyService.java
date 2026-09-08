@@ -5,6 +5,7 @@ import com.umesh.hotelbooking.entity.IdempotencyStatus;
 import com.umesh.hotelbooking.exception.IdempotencyConflictException;
 import com.umesh.hotelbooking.exception.IdempotencyPayloadMismatchException;
 import com.umesh.hotelbooking.repository.IdempotencyRecordRepository;
+import com.umesh.hotelbooking.web.RequestMeta;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -37,6 +38,12 @@ import java.util.Optional;
  * {@code IN_PROGRESS} forever is a real (if narrow) production scenario this does not
  * reproduce. Building that would need a second commit boundary partway through a single
  * request, which is more machinery than this exercise's idempotency story needs to prove.
+ *
+ * <p>{@link #begin} hashes the inner payload DTO passed to it, never a DTO that carries its
+ * own {@code msgId} — since Phase 6 moved {@code msgId} out to the request envelope, this is
+ * simply what every caller now has; it is also strictly more correct than the earlier
+ * DTO-with-embedded-key shape, since the hash no longer includes the key that is supposed to
+ * be orthogonal to the request body it identifies.
  */
 @Service
 public class IdempotencyService {
@@ -52,6 +59,9 @@ public class IdempotencyService {
     }
 
     /**
+     * @param meta the request's msgId, server-derived apiType and correlationId — the payload
+     *     hashed for replay comparison is the inner {@code payload} DTO alone, never a DTO
+     *     that carries its own idempotency key; see the class Javadoc.
      * @return the stored response if {@code msgId} was already completed with an identical
      *     body; empty if this is a new request (an IN_PROGRESS row has been inserted — call
      *     {@link #complete} once processing finishes)
@@ -59,25 +69,27 @@ public class IdempotencyService {
      * @throws IdempotencyPayloadMismatchException if the body differs from the original
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public <T> Optional<T> begin(String msgId, Object requestPayload, Class<T> responseType) {
+    public <T> Optional<T> begin(RequestMeta meta, Object requestPayload, Class<T> responseType) {
         String hash = hash(requestPayload);
 
-        Optional<IdempotencyRecord> existing = repository.findById(msgId);
+        Optional<IdempotencyRecord> existing = repository.findById(meta.msgId());
         if (existing.isPresent()) {
             return handleReplay(existing.get(), hash, responseType);
         }
 
         IdempotencyRecord record = IdempotencyRecord.builder()
-                .msgId(msgId)
+                .msgId(meta.msgId())
                 .requestHash(hash)
                 .status(IdempotencyStatus.IN_PROGRESS)
                 .createdAt(Instant.now(clock))
+                .apiType(meta.apiType())
+                .correlationId(meta.correlationId())
                 .build();
         try {
             repository.saveAndFlush(record);
         } catch (DataIntegrityViolationException e) {
             // Lost the race on the msgId primary key: another request claimed it first.
-            throw new IdempotencyConflictException(msgId);
+            throw new IdempotencyConflictException(meta.msgId());
         }
         return Optional.empty();
     }

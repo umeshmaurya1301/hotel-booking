@@ -23,12 +23,18 @@ public record PaymentResponse(
         int attemptNo,
         Instant nextAttemptAt,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt) implements PendingAware {
 
     public static PaymentResponse from(Payment payment, String bookingUid) {
         return new PaymentResponse(
                 payment.getPaymentUid(), bookingUid, payment.getMethod(), payment.getProviderCode(),
                 payment.getAmount(), payment.getCurrency(), payment.getState(), payment.getAttemptNo(),
                 payment.getNextAttemptAt(), payment.getCreatedAt(), payment.getUpdatedAt());
+    }
+
+    /** Design doc 7.2: {@code UNKNOWN} and {@code MANUAL_REVIEW} are unresolved, not failed. */
+    @Override
+    public boolean pending() {
+        return state == PaymentState.UNKNOWN || state == PaymentState.MANUAL_REVIEW;
     }
 }

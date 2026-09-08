@@ -1294,15 +1294,24 @@ invariant checked before any debit is written (9.4), the cancellation flow of 9.
 step-for-step, and ReversalService as the single place every scenario in 9.2 goes through —
 late settlement after an expired hold, and admin-initiated MANUAL_CORRECTION for a duplicate
 charge on an already-settled booking (which required a small, explicitly-documented addition
-to the Phase 1 BookingState transition table — see 16.4). What is not: the request/response
-envelope (6); webhooks, HMAC and the data protection layer (7) — idempotency layer (c) waits
-on the inbound webhook this introduces; and search (8).
+to the Phase 1 BookingState transition table — see 16.4); and the API layer (6) — the request
+envelope (ApiRequest<T>) and response envelope (ApiResponse<T>) with ResponseEnvelopeAdvice
+wrapping every controller return value, a structured ErrorCode enum driving both
+GlobalExceptionHandler's status mapping and every DomainException subclass, a server-generated
+correlationId threaded through logs (MDC), IdempotencyRecord and LedgerEntry, apiType derived
+per-route by an interceptor reading an @Api annotation rather than a client-supplied field, the
+msgId migration that made booking creation idempotent for the first time (see 16.5), and the
+trivially-stubbed @RequireRole/RoleInterceptor role separation of 11.4. What is not: webhooks,
+HMAC and the data protection layer (7) — idempotency layer (c) waits on the inbound webhook
+this introduces; and search (8).
 Two structural notes on what phase 2 added beyond the tree in 2.3: controllers are grouped
 by caller (controller.admin, controller.user, controller.webhook, controller.advice) as
 11.4 requires, and a minimal GlobalExceptionHandler mapping error codes to HTTP status was
 pulled forward from phase 6 — without it every domain exception surfaces as a 500, which
-would make the phase-2 endpoints look broken rather than scoped. The envelope itself is
-still phase 6, and adopting it will not change any controller (11.2).
+would make the phase-2 endpoints look broken rather than scoped. The envelope itself was still
+phase 6's job, and adopting it did not change any controller's method signature or return
+type (11.2) — only what each one is annotated with and, for state-changing endpoints, what its
+parameter type wraps.
 
 16.2 Phase 3 findings that change later phases
 Spring Framework 7 ships its own resilience annotations —
@@ -1391,6 +1400,136 @@ skipping the gateway and the ledger entirely (nothing moved, nothing to record),
 policy at exactly the 24-hour boundary, admin manual reversal moving a CONFIRMED booking to
 REVERSED with a balanced ledger, and — after the fix above — a genuinely late settlement
 producing both a CHARGE and a REVERSAL entry that net to zero.
+
+16.5 Phase 6 findings
+The headline finding is not subtle: booking creation was not idempotent before this phase.
+CreateBookingRequest carried no key at all — msgId lived only on CancelBookingRequest and
+InitiatePaymentRequest, each with a hand-rolled "if present, dedupe" branch — so a retried
+create genuinely held a second set of room-nights. Moving msgId out to ApiRequest<T> and
+making it @NotBlank closed this for free: every state-changing endpoint gets the idempotency
+key by construction, the two hasMsgId conditionals in PaymentService and CancellationService
+disappeared, and BookingCreator.create gained the same begin/complete wrapper the other two
+already had. BookingIdempotencyApiTest exercises exactly this end to end and would have failed
+against the pre-Phase-6 code.
+One placement decision the migration forced: idempotency now lives in BookingCreator, not
+BookingService, even though BookingService is the class a caller actually calls. BookingCreator
+is the @Transactional method Phase 3 split out specifically so @Retryable (on BookingService)
+never wraps an already-rolled-back transaction (16.2). IdempotencyService.begin runs
+REQUIRES_NEW and therefore commits independently of whatever transaction called it; if the
+begin/complete pair sat in BookingService instead, a lock-timeout retry would call begin again
+against an msgId whose IN_PROGRESS row already committed on the failed first attempt, and the
+retry would see IdempotencyConflictException instead of retrying cleanly. Putting the wrapper
+on the same bean as the transaction it guards — mirroring PaymentService.pay and
+CancellationService.cancel exactly — sidesteps this rather than papering over it.
+The PENDING mechanism (design doc 11.2, task spec §5.1) is a marker interface
+(PendingAware.pending()) on the response DTO, not a reflective check or an import of
+PaymentState into the advice. Two reasons, not one: first, ResponseEnvelopeAdvice would
+otherwise need to import PaymentState (or worse, switch on a class name) and grow a new branch
+every time a later phase adds another kind of unresolved outcome — a refund stuck mid-flight,
+say. Second, and more important, deciding "is this pending" is a business judgement about what
+a given state means, and that judgement belongs with the DTO that owns the state, not with a
+web-layer adapter reasoning about a domain enum it should not need to know exists.
+apiType required one addition beyond design doc 11.3's own list: GET_PAYMENT. The design
+document's ApiType enum (task spec §4.4) lists PAY_BOOKING for the pay endpoint but nothing for
+PaymentController.get(paymentUid) — an oversight in the source list, not a deliberate omission,
+since every other GET already has its own constant (GET_PROPERTY, VIEW_INVENTORY, GET_BOOKING).
+Added it rather than leaving one handler stamped UNKNOWN for no reason.
+Two places where the letter of the task spec could not be followed and a substitute was
+chosen instead, both flagged as deviations rather than silently done:
+  - ApiRequest<Void> for the two no-body admin triggers (sweeper run, reconciliation run) is
+    unsatisfiable: ApiRequest.payload() is @NotNull, and java.lang.Void has no non-null
+    instance a client could ever send — every such request would fail validation before
+    reaching the handler, which is the opposite of what "give them an envelope" was for. Used
+    dto/EmptyPayload (a zero-field record) instead, so a client sends "payload": {}. One extra
+    file beyond the phase's own 18-file list, justified by the contradiction it resolves.
+  - The task spec's §3.1 locked service signatures at (String msgId, T request), but its own
+    §4.5 requires apiType and correlationId to reach IdempotencyRecord too, and recommends
+    bundling them into a small RequestMeta record "built once in the controller" rather than
+    threading three parallel parameters through three services. Resolved in favour of §4.5:
+    BookingService.create, PaymentService.pay and CancellationService.cancel all take a
+    RequestMeta (msgId, apiType, correlationId) in the msgId parameter's position, not a bare
+    String. It is still a plain, ApiContext-free record a unit test constructs with a literal
+    value, so §3.1's actual concern — no web-scope coupling into service, no broken testability
+    — holds regardless of which of the two shapes carries it. RequestMeta and its sibling web.Api
+    annotation are, like EmptyPayload, extra files beyond the enumerated 18.
+Deliberately not wired: BookingSweeper.sweep() and PaymentReconciliationService.run(), despite
+task spec §9.1 saying the two no-body admin triggers "belong under idempotency ... like the
+rest." They get the envelope (msgId recorded, correlationId and apiType stamped in scope) but
+not an IdempotencyService.begin/complete wrapper. Reason: idempotency layer (a)'s replay
+contract is "same msgId returns the identical stored response, does not reprocess" — correct
+for create-or-charge-once operations, actively wrong for a scan-and-process sweep, where a
+second call with the same msgId should run a fresh pass over whatever is due now, not replay a
+stale response from an earlier pass that may have processed a completely different set of
+payments. Treating "belongs under idempotency" as "gets the envelope, not necessarily the
+dedupe layer" is the reading applied here; flagged in case a later reviewer expected otherwise.
+LedgerEntry.correlationId now genuinely correlates instead of being three different business
+uids wearing a "correlationId" column name. Before this phase, LedgerService.append's last
+parameter was payment.getPaymentUid() / refund.getRefundUid() / reversal.getReversalUid()
+depending on entry type — a stable identifier, but not the request's trace handle, and not
+comparable across entry types for the same operation. recordCharge/recordRefund/recordReversal
+now take an explicit correlationId: the originating request's for PaymentService and
+CancellationService (via RequestMeta), and — since PaymentReconciliationService's scheduled
+pass has no request to inherit one from — a UUID minted once per run() invocation and reused
+across every LedgerEntry and PaymentStatusCheck that pass writes, so one sweep is one trace
+handle rather than N unrelated ones.
+No pre-existing test's assertions needed to change in substance, only call sites — worth
+recording because it is not the outcome the task spec anticipated ("regression duty: run the
+full suite... fix them; do not weaken assertions"). The reason turned out to be structural: all
+17 pre-Phase-6 test classes exercise services and repositories directly, never through MockMvc
+or the HTTP layer, so ResponseEnvelopeAdvice, GlobalExceptionHandler's new envelope shape and
+RequestEnvelopeAdvice never touch any of them — there was no assertion about response shape to
+strengthen. The only mechanical change was threading a fresh RequestMeta (a random msgId per
+call, since @NotBlank is now enforced) through every bookingService.create(...) call site across
+BookingServiceTest, BookingSweeperTest, InventoryReservationConcurrencyTest and
+ReservationWithoutInJvmLockTest — 31 call sites, all via one substitution. The one place this
+mattered for correctness rather than just compiling: InventoryReservationConcurrencyTest and
+ReservationWithoutInJvmLockTest race many threads against literally the same CreateBookingRequest
+payload. Giving every thread the same msgId would have collapsed the race into "one request, N
+replays" — the second thread through would see IdempotencyConflictException, not
+InventoryUnavailableException — and silently invalidated the single most valuable test in the
+project (15.1) without any test failure to notice it. Each thread gets its own generated msgId
+for exactly this reason.
+A genuine bug this phase's own manual smoke test caught that no automated test did: registering
+CorrelationIdFilter at @Order(Ordered.HIGHEST_PRECEDENCE), as design doc 11 and an early draft
+of this code both did, throws ScopeNotActiveException the moment it touches the @RequestScope
+ApiContext bean — but only outside of a MockMvc-driven test. A plain servlet Filter runs before
+DispatcherServlet ever gets to bind RequestContextHolder for the current thread, so a
+request-scoped bean has nothing to resolve against yet; MockMvc's own ServletTestExecutionListener
+pre-binds RequestContextHolder for the whole test method regardless of filter order, which is
+exactly why all six new web-layer tests passed against the broken ordering and only a real
+./gradlew bootRun + curl smoke test surfaced it. Fixed by registering Spring's own
+RequestContextFilter in WebConfig at the true HIGHEST_PRECEDENCE and moving CorrelationIdFilter
+to HIGHEST_PRECEDENCE + 10. Recorded here because it is exactly the kind of gap "the tests pass"
+can hide, and the fix (a filter registered ahead of another filter, both ahead of the servlet)
+has nothing to do with Spring MVC and would not have been caught by any @WebMvcTest no matter
+how many were added — only a real container catches a real container's request-binding order.
+Two more Jackson 3 / Spring Framework 7 platform findings, in the spirit of 16.2/16.3's:
+  - jackson-annotations is not part of the tools.jackson.* relocation. Jackson 3 moved
+    jackson-core and jackson-databind to the tools.jackson.core Maven group and the
+    tools.jackson.* package root (16.3 already found this for ObjectMapper), but
+    jackson-annotations deliberately stayed on the Jackson 2.x groupId and package
+    (com.fasterxml.jackson.annotation) — the jackson-databind 3.x POM says so explicitly
+    ("Annotations remain at Jackson 2.x group id"). @JsonInclude on ApiResponse therefore
+    imports from com.fasterxml.jackson.annotation, not tools.jackson.databind.annotation as a
+    mechanical find-and-replace of every other Jackson import in this codebase would suggest.
+  - Spring Boot 4's test-slice annotations moved packages by feature module. WebMvcTest and
+    AutoConfigureMockMvc are no longer under org.springframework.boot.test.autoconfigure.web.servlet
+    (where every Boot-3-era example still has them); they now ship in the spring-boot-webmvc-test
+    module under org.springframework.boot.webmvc.test.autoconfigure. Several other MVC exception
+    types used by the new GlobalExceptionHandler handlers moved with Spring Framework 7's own
+    reorganisation: HttpRequestMethodNotSupportedException is org.springframework.web (no longer
+    .bind), HandlerMethodValidationException and MethodArgumentTypeMismatchException are
+    org.springframework.web.method.annotation, and NoResourceFoundException is
+    org.springframework.web.servlet.resource. None of this resolves to a compile error pointing
+    at the actual problem — it resolves to "package does not exist" against the old import, which
+    reads like a missing dependency rather than a moved class unless you already know to look.
+Nothing found in this phase looks wrong for a later one. The one open question worth flagging
+for Phase 7: PaymentWebhookController will need its own apiType constant (PAYMENT_WEBHOOK
+already exists in the enum, unused until then) and will sit outside @RequireRole entirely,
+authenticated by HMAC instead of the X-Role header — RoleInterceptor's "no header, let it
+through" default means it would technically not block an unauthenticated webhook call today if
+someone pointed a browser at it directly, which is fine only because the controller does not
+exist yet. Phase 7 should not rely on RoleInterceptor for anything on that path.
 
 17. Implementation Plan
 Phase 1 — Entity core (highest rubric weight; revised mid-course, see 0.1)

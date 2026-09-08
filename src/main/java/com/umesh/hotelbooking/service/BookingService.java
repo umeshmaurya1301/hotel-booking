@@ -2,6 +2,7 @@ package com.umesh.hotelbooking.service;
 
 import com.umesh.hotelbooking.dto.BookingResponse;
 import com.umesh.hotelbooking.dto.CreateBookingRequest;
+import com.umesh.hotelbooking.web.RequestMeta;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.resilience.annotation.Retryable;
@@ -28,6 +29,12 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>Uses Spring Framework 7's own {@code @Retryable} rather than Resilience4j — it is in the
  * framework, and it covers this case completely.
+ *
+ * <p>Idempotency (design doc 8a) lives inside {@link BookingCreator}, not here, for the same
+ * reason the transaction does: {@code IdempotencyService.begin} runs {@code REQUIRES_NEW} and
+ * commits independently of the retried transaction, so it must sit inside the unit that is
+ * retried as a whole, alongside the business logic it guards — exactly where {@code
+ * PaymentService.pay} and {@code CancellationService.cancel} keep theirs.
  */
 @Service
 public class BookingService {
@@ -46,8 +53,8 @@ public class BookingService {
             multiplier = 2.0,
             maxDelay = 250,
             timeUnit = TimeUnit.MILLISECONDS)
-    public BookingResponse create(CreateBookingRequest request) {
-        return bookingCreator.create(request);
+    public BookingResponse create(RequestMeta meta, CreateBookingRequest request) {
+        return bookingCreator.create(meta, request);
     }
 
     public BookingResponse find(String bookingUid) {

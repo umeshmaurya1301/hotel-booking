@@ -23,6 +23,7 @@ import com.umesh.hotelbooking.gateway.PaymentResult;
 import com.umesh.hotelbooking.repository.BookingRepository;
 import com.umesh.hotelbooking.repository.PaymentRepository;
 import com.umesh.hotelbooking.repository.PropertyRepository;
+import com.umesh.hotelbooking.web.RequestMeta;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -81,13 +82,10 @@ public class PaymentService {
     }
 
     @Transactional
-    public PaymentResponse pay(String bookingUid, InitiatePaymentRequest request) {
-        boolean hasMsgId = request.msgId() != null && !request.msgId().isBlank();
-        if (hasMsgId) {
-            var cached = idempotencyService.begin(request.msgId(), request, PaymentResponse.class);
-            if (cached.isPresent()) {
-                return cached.get();
-            }
+    public PaymentResponse pay(String bookingUid, RequestMeta meta, InitiatePaymentRequest request) {
+        var cached = idempotencyService.begin(meta, request, PaymentResponse.class);
+        if (cached.isPresent()) {
+            return cached.get();
         }
 
         Booking booking = bookingRepository.findByBookingUid(bookingUid)
@@ -101,16 +99,15 @@ public class PaymentService {
             // reports current status rather than touching the gateway a second time.
             response = PaymentResponse.from(payment, booking.getBookingUid());
         } else {
-            response = attemptGatewayCall(booking, payment, request);
+            response = attemptGatewayCall(booking, payment, request, meta.correlationId());
         }
 
-        if (hasMsgId) {
-            idempotencyService.complete(request.msgId(), response);
-        }
+        idempotencyService.complete(meta.msgId(), response);
         return response;
     }
 
-    private PaymentResponse attemptGatewayCall(Booking booking, Payment payment, InitiatePaymentRequest request) {
+    private PaymentResponse attemptGatewayCall(Booking booking, Payment payment, InitiatePaymentRequest request,
+                                               String correlationId) {
         Property property = propertyRepository.findById(booking.getPropertyId())
                 .orElseThrow(() -> new PropertyNotFoundException("for booking " + booking.getBookingUid()));
         String bankCode = property.getPropertyGroup().getSettlementBankCode();
@@ -132,7 +129,7 @@ public class PaymentService {
 
         try {
             PaymentResult result = circuitBreaker.execute(() -> gatewayClient.callInitiate(provider, gatewayRequest));
-            applyOutcome(booking, saved, result.outcome());
+            applyOutcome(booking, saved, result.outcome(), correlationId);
         } catch (GatewayTimeoutException | CircuitBreakerOpenException e) {
             // Breaker open OR timeout: the outcome is unobserved, not failed. Never CONFIRMED
             // (money may not have moved), never FAILED (money may have moved) (7.2).
@@ -211,12 +208,12 @@ public class PaymentService {
         return method.name() + "-" + timestamp + "-" + suffix;
     }
 
-    private void applyOutcome(Booking booking, Payment payment, GatewayOutcome outcome) {
+    private void applyOutcome(Booking booking, Payment payment, GatewayOutcome outcome, String correlationId) {
         switch (outcome) {
             case SETTLED -> {
                 payment.transitionTo(PaymentState.SETTLED);
                 booking.transitionTo(BookingState.CONFIRMED);
-                ledgerService.recordCharge(payment, booking);
+                ledgerService.recordCharge(payment, booking, correlationId);
             }
             case FAILED -> {
                 payment.transitionTo(PaymentState.FAILED);

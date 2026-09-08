@@ -7,12 +7,15 @@ import com.umesh.hotelbooking.entity.Property;
 import com.umesh.hotelbooking.entity.RoomType;
 import com.umesh.hotelbooking.repository.PropertyRepository;
 import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.web.ApiType;
+import com.umesh.hotelbooking.web.RequestMeta;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Fixture support for the concurrency tests.
@@ -53,5 +56,15 @@ abstract class AbstractBookingConcurrencyTestSupport {
         LocalDate firstNight = LocalDate.now(clock.withZone(property.zone()));
 
         return new Fixture(response.propertyUid(), roomType.getRoomTypeUid(), roomType.getId(), firstNight);
+    }
+
+    /**
+     * A fresh idempotency key per call. Concurrency tests in particular race several threads
+     * with an otherwise-identical {@code CreateBookingRequest}; a shared {@code msgId} across
+     * them would make the idempotency layer collapse the race into "one request, N replays"
+     * instead of the independent, competing requests these tests mean to exercise.
+     */
+    protected static RequestMeta freshMeta() {
+        return new RequestMeta(UUID.randomUUID().toString(), ApiType.CREATE_BOOKING, UUID.randomUUID().toString());
     }
 }

@@ -59,7 +59,7 @@ class InventoryReservationConcurrencyTest extends AbstractBookingConcurrencyTest
         LocalDate night = fixture.firstNight();
 
         RaceResult result = race(20, () ->
-                bookingService.create(new CreateBookingRequest(
+                bookingService.create(freshMeta(), new CreateBookingRequest(
                         null, fixture.roomTypeUid(), night, night.plusDays(1), 1, 1, 0)));
 
         assertThat(result.successes()).as("exactly one booking may win the last unit").isEqualTo(1);
@@ -83,7 +83,7 @@ class InventoryReservationConcurrencyTest extends AbstractBookingConcurrencyTest
         LocalDate night = fixture.firstNight();
 
         RaceResult result = race(4, () ->
-                bookingService.create(new CreateBookingRequest(
+                bookingService.create(freshMeta(), new CreateBookingRequest(
                         null, fixture.roomTypeUid(), night, night.plusDays(1), 2, 2, 0)));
 
         assertThat(result.successes()).as("3 units cannot satisfy two 2-unit bookings").isEqualTo(1);
@@ -108,10 +108,10 @@ class InventoryReservationConcurrencyTest extends AbstractBookingConcurrencyTest
         LocalDate night3 = night1.plusDays(2);
 
         // Take the single unit on the middle night only.
-        bookingService.create(new CreateBookingRequest(
+        bookingService.create(freshMeta(), new CreateBookingRequest(
                 null, fixture.roomTypeUid(), night2, night3, 1, 1, 0));
 
-        assertThatThrownBy(() -> bookingService.create(new CreateBookingRequest(
+        assertThatThrownBy(() -> bookingService.create(freshMeta(), new CreateBookingRequest(
                 null, fixture.roomTypeUid(), night1, night3.plusDays(1), 1, 1, 0)))
                 .isInstanceOf(InventoryUnavailableException.class)
                 .hasMessageContaining(night2.toString());
@@ -146,7 +146,7 @@ class InventoryReservationConcurrencyTest extends AbstractBookingConcurrencyTest
                 start.await();
                 int done = 0;
                 for (int i = 0; i < iterations; i++) {
-                    bookingService.create(new CreateBookingRequest(
+                    bookingService.create(freshMeta(), new CreateBookingRequest(
                             null, fixture.roomTypeUid(), d1, d1.plusDays(3), 1, 1, 0));
                     done++;
                 }
@@ -157,7 +157,7 @@ class InventoryReservationConcurrencyTest extends AbstractBookingConcurrencyTest
                 start.await();
                 int done = 0;
                 for (int i = 0; i < iterations; i++) {
-                    bookingService.create(new CreateBookingRequest(
+                    bookingService.create(freshMeta(), new CreateBookingRequest(
                             null, fixture.roomTypeUid(), d1.plusDays(2), d1.plusDays(5), 1, 1, 0));
                     done++;
                 }
@@ -195,7 +195,7 @@ class InventoryReservationConcurrencyTest extends AbstractBookingConcurrencyTest
         // nights rather than each having the room to itself.
         RaceResult result = race(24, () -> {
             LocalDate start = d1.plusDays(offsets.getAndIncrement() % 3);
-            return bookingService.create(new CreateBookingRequest(
+            return bookingService.create(freshMeta(), new CreateBookingRequest(
                     null, fixture.roomTypeUid(), start, start.plusDays(2), 1, 1, 0));
         });
 
