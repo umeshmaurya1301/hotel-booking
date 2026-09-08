@@ -59,6 +59,15 @@ public class PropertyGroup {
     @Column(name = "settlement_bank_code", length = 40)
     private String settlementBankCode;
 
+    /**
+     * Which {@code RefundPolicy} this group's cancellations use (design doc 9.3). The same
+     * per-group resolution as {@link #settlementBankCode}: different chains can carry
+     * different cancellation terms, which is the brief's "pluggable" requirement applied to
+     * refunds specifically.
+     */
+    @Column(name = "refund_policy_code", length = 40)
+    private String refundPolicyCode;
+
     @PrePersist
     private void onCreate() {
         if (propertyGroupUid == null) {

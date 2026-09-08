@@ -77,6 +77,7 @@ class InventoryAdminServiceTest {
     void onboardOneProperty() {
         PropertyResponse response = onboardingService.onboard(new OnboardPropertyRequest(
                 null, "Admin Test Owner", null, null, null, null,
+                null,
                 "Admin Test Hotel", "Bengaluru", null, null, null, 4, "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Deluxe King", 10, 2, new BigDecimal("8000.00"))),
                 null));

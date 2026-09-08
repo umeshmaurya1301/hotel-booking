@@ -35,8 +35,14 @@ public final class BookingStateMachine {
                         BookingState.MANUAL_REVIEW, BookingState.REVERSED));
         table.put(BookingState.MANUAL_REVIEW,
                 EnumSet.of(BookingState.CONFIRMED, BookingState.PAYMENT_FAILED, BookingState.REVERSED));
+        // REVERSED added here in the ledger phase: a duplicate charge or an admin manual
+        // correction (design doc 9.2's DUPLICATE_CHARGE / MANUAL_CORRECTION reasons) can
+        // surface against a booking that already settled normally, not only one stuck at
+        // PAYMENT_UNKNOWN or MANUAL_REVIEW. The original table only wired REVERSED from
+        // those two, which left no way to represent that case; this closes the gap rather
+        // than leaving it implicit.
         table.put(BookingState.CONFIRMED,
-                EnumSet.of(BookingState.CANCELLED, BookingState.COMPLETED));
+                EnumSet.of(BookingState.CANCELLED, BookingState.COMPLETED, BookingState.REVERSED));
         table.put(BookingState.PAYMENT_FAILED,
                 EnumSet.of(BookingState.EXPIRED));
         table.put(BookingState.CANCELLED, EnumSet.noneOf(BookingState.class));

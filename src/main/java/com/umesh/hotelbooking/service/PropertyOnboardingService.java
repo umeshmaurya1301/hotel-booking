@@ -162,6 +162,7 @@ public class PropertyOnboardingService {
                 .name(groupName)
                 .owner(owner)
                 .settlementBankCode(request.settlementBankCode())
+                .refundPolicyCode(request.refundPolicyCode())
                 .build());
     }
 

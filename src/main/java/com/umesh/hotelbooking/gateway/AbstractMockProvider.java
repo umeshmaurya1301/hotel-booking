@@ -55,14 +55,26 @@ public abstract class AbstractMockProvider implements PaymentGatewayProvider {
         };
     }
 
+    /**
+     * Always settles immediately. Unlike {@code initiate}, refunds have no
+     * {@link SimulatedOutcome} lever: a real gateway typically accepts a refund request
+     * synchronously even though the underlying money movement takes days, and this system
+     * does not build a refund-reconciliation ladder to match payment's (design doc 7.6.6
+     * draws that scope line for payment; extending it to refunds would be the same
+     * over-engineering one level down). A refund that the gateway rejects outright is a
+     * distinct, narrower problem this mock does not need to simulate to demonstrate the
+     * cancellation flow.
+     */
     @Override
+    @ConcurrencyLimit(5)
     public RefundResult refund(RefundRequest request) {
-        throw new UnsupportedOperationException(providerCode() + ": refund is built in the cancellation phase");
+        return new RefundResult(GatewayOutcome.SETTLED, "RFND-" + request.providerReference(), "refund accepted");
     }
 
     @Override
+    @ConcurrencyLimit(5)
     public ReversalResult reverse(ReversalRequest request) {
-        throw new UnsupportedOperationException(providerCode() + ": reversal is built in the cancellation phase");
+        return new ReversalResult(GatewayOutcome.SETTLED, "RVRS-" + request.providerReference(), "reversal accepted");
     }
 
     @Override

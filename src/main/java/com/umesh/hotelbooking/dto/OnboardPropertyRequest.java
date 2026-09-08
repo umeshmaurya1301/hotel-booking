@@ -23,6 +23,11 @@ import java.util.Set;
  * @param zoneId IANA zone of the property, e.g. {@code Asia/Kolkata}. Required, because
  *     "what night is it here" cannot be answered without it (design doc 4.5).
  * @param pricingStrategyCode optional; falls back to {@code inventory.default-pricing-strategy}
+ * @param refundPolicyCode optional, and only meaningful when this request creates a new
+ *     group (attaching to an existing group keeps that group's existing policy); falls back
+ *     to {@code RefundPolicyFactory.DEFAULT_CODE}. Per-group, not per-property, matching
+ *     {@code settlementBankCode} (design doc 6.4, 9.3): different chains can carry different
+ *     cancellation terms.
  */
 public record OnboardPropertyRequest(
         String ownerUid,
@@ -32,6 +37,7 @@ public record OnboardPropertyRequest(
         String propertyGroupUid,
         String propertyGroupName,
         String settlementBankCode,
+        String refundPolicyCode,
 
         @NotBlank String name,
         @NotBlank String city,

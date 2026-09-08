@@ -29,7 +29,10 @@ class BookingStateMachineTest {
                 BookingState.MANUAL_REVIEW, BookingState.REVERSED));
         table.put(BookingState.MANUAL_REVIEW, EnumSet.of(
                 BookingState.CONFIRMED, BookingState.PAYMENT_FAILED, BookingState.REVERSED));
-        table.put(BookingState.CONFIRMED, EnumSet.of(BookingState.CANCELLED, BookingState.COMPLETED));
+        // REVERSED added in the ledger phase for duplicate-charge / manual-correction
+        // reversals against an already-settled booking (design doc 9.2).
+        table.put(BookingState.CONFIRMED,
+                EnumSet.of(BookingState.CANCELLED, BookingState.COMPLETED, BookingState.REVERSED));
         table.put(BookingState.PAYMENT_FAILED, EnumSet.of(BookingState.EXPIRED));
         table.put(BookingState.CANCELLED, EnumSet.noneOf(BookingState.class));
         table.put(BookingState.COMPLETED, EnumSet.noneOf(BookingState.class));

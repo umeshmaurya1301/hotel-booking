@@ -134,7 +134,7 @@ public class SeedDataLoader implements ApplicationRunner {
                                                  Set<Amenity> amenities, List<RoomTypeRequest> roomTypes) {
         return new OnboardPropertyRequest(
                 null, "Meridian Hotels Pvt Ltd", "operators@meridian.example",
-                null, "Meridian Hotels", "HDFC",
+                null, "Meridian Hotels", "HDFC", null,
                 name, city, locality, null, null, stars, ZONE, "INR", amenities,
                 roomTypes, null);
     }
@@ -144,7 +144,7 @@ public class SeedDataLoader implements ApplicationRunner {
                                                String groupUid, String ownerUid) {
         return new OnboardPropertyRequest(
                 ownerUid, null, null,
-                groupUid, null, null,
+                groupUid, null, null, null,
                 name, city, locality, null, null, stars, ZONE, "INR", amenities,
                 roomTypes, null);
     }
@@ -153,7 +153,7 @@ public class SeedDataLoader implements ApplicationRunner {
                                                Set<Amenity> amenities, List<RoomTypeRequest> roomTypes) {
         return new OnboardPropertyRequest(
                 null, name + " Owner", null,
-                null, null, null,
+                null, null, null, null,
                 name, city, locality, null, null, stars, ZONE, "INR", amenities,
                 roomTypes, null);
     }

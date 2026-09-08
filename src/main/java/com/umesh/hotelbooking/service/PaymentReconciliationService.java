@@ -10,6 +10,7 @@ import com.umesh.hotelbooking.entity.GatewayCheckStatus;
 import com.umesh.hotelbooking.entity.Payment;
 import com.umesh.hotelbooking.entity.PaymentState;
 import com.umesh.hotelbooking.entity.PaymentStatusCheck;
+import com.umesh.hotelbooking.entity.ReversalReason;
 import com.umesh.hotelbooking.exception.InvalidPaymentStateException;
 import com.umesh.hotelbooking.exception.InvalidRequestException;
 import com.umesh.hotelbooking.exception.PaymentNotFoundException;
@@ -57,6 +58,8 @@ public class PaymentReconciliationService {
     private final PaymentGatewayClient gatewayClient;
     private final PaymentCircuitBreaker circuitBreaker;
     private final InventoryReservationService reservationService;
+    private final LedgerService ledgerService;
+    private final ReversalService reversalService;
     private final PaymentStatusCheckProperties properties;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
@@ -68,6 +71,8 @@ public class PaymentReconciliationService {
                                         PaymentGatewayClient gatewayClient,
                                         PaymentCircuitBreaker circuitBreaker,
                                         InventoryReservationService reservationService,
+                                        LedgerService ledgerService,
+                                        ReversalService reversalService,
                                         PaymentStatusCheckProperties properties,
                                         TransactionTemplate transactionTemplate,
                                         Clock clock) {
@@ -77,6 +82,8 @@ public class PaymentReconciliationService {
         this.router = router;
         this.gatewayClient = gatewayClient;
         this.circuitBreaker = circuitBreaker;
+        this.ledgerService = ledgerService;
+        this.reversalService = reversalService;
         this.reservationService = reservationService;
         this.properties = properties;
         this.transactionTemplate = transactionTemplate;
@@ -189,15 +196,18 @@ public class PaymentReconciliationService {
 
         switch (checkStatus) {
             case SETTLED -> {
+                // Money moved either way - the CHARGE is real regardless of what happens to
+                // the booking next, and must be recorded before any reversal of it (the
+                // ledger invariant would otherwise reject reversing a charge that was never
+                // written).
                 boolean stillHeld = !payment.isInventoryReleased();
                 payment.transitionTo(PaymentState.SETTLED);
                 payment.setNextAttemptAt(null);
+                ledgerService.recordCharge(payment, booking);
                 if (stillHeld) {
                     booking.transitionTo(BookingState.CONFIRMED);
-                    // ledger CHARGE entry: built in the ledger phase.
                 } else {
-                    booking.transitionTo(BookingState.REVERSED);
-                    // reverse(LATE_SUCCESS_ON_EXPIRED_BOOKING): built in the ledger phase.
+                    reversalService.reverse(payment, booking, ReversalReason.LATE_SUCCESS_ON_EXPIRED_BOOKING);
                 }
                 loggedAttemptNo = nextAttemptNo;
                 result = Outcome.SETTLED;
@@ -298,7 +308,14 @@ public class PaymentReconciliationService {
             payment.transitionTo(request.outcome());
 
             if (request.outcome() == PaymentState.SETTLED) {
-                booking.transitionTo(payment.isInventoryReleased() ? BookingState.REVERSED : BookingState.CONFIRMED);
+                // Same ordering as the automated ladder: the charge is real and must be
+                // recorded before any reversal of it, regardless of which way this goes.
+                ledgerService.recordCharge(payment, booking);
+                if (payment.isInventoryReleased()) {
+                    reversalService.reverse(payment, booking, ReversalReason.LATE_SUCCESS_ON_EXPIRED_BOOKING);
+                } else {
+                    booking.transitionTo(BookingState.CONFIRMED);
+                }
             } else {
                 booking.transitionTo(BookingState.PAYMENT_FAILED);
                 releaseIfHeld(payment, booking);

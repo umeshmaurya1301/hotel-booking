@@ -55,6 +55,7 @@ public class PaymentService {
     private final PaymentCircuitBreaker circuitBreaker;
     private final PaymentStatusCheckProperties statusCheckProperties;
     private final IdempotencyService idempotencyService;
+    private final LedgerService ledgerService;
     private final Clock clock;
 
     public PaymentService(BookingRepository bookingRepository,
@@ -65,6 +66,7 @@ public class PaymentService {
                           PaymentCircuitBreaker circuitBreaker,
                           PaymentStatusCheckProperties statusCheckProperties,
                           IdempotencyService idempotencyService,
+                          LedgerService ledgerService,
                           Clock clock) {
         this.bookingRepository = bookingRepository;
         this.propertyRepository = propertyRepository;
@@ -73,6 +75,7 @@ public class PaymentService {
         this.gatewayClient = gatewayClient;
         this.circuitBreaker = circuitBreaker;
         this.statusCheckProperties = statusCheckProperties;
+        this.ledgerService = ledgerService;
         this.idempotencyService = idempotencyService;
         this.clock = clock;
     }
@@ -213,6 +216,7 @@ public class PaymentService {
             case SETTLED -> {
                 payment.transitionTo(PaymentState.SETTLED);
                 booking.transitionTo(BookingState.CONFIRMED);
+                ledgerService.recordCharge(payment, booking);
             }
             case FAILED -> {
                 payment.transitionTo(PaymentState.FAILED);

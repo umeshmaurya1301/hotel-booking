@@ -34,12 +34,14 @@ public class GlobalExceptionHandler {
             "BOOKING_NOT_FOUND",
             "GUEST_NOT_FOUND",
             "PAYMENT_NOT_FOUND",
+            "REFUND_NOT_FOUND",
             "INVENTORY_NOT_MATERIALISED");
 
     private static final Set<String> CONFLICT_CODES = Set.of(
             "INVENTORY_UNAVAILABLE",
             "INVALID_STATE_TRANSITION",
-            "REQUEST_IN_PROGRESS");
+            "REQUEST_IN_PROGRESS",
+            "REFUND_EXCEEDS_CHARGE");
 
     /** design doc 8a: same msgId, different body — a client bug, distinct from a plain 400. */
     private static final Set<String> UNPROCESSABLE_CODES = Set.of("MSG_ID_PAYLOAD_MISMATCH");

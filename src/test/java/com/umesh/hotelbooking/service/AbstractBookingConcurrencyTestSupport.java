@@ -41,6 +41,7 @@ abstract class AbstractBookingConcurrencyTestSupport {
         PropertyResponse response = onboardingService.onboard(new OnboardPropertyRequest(
                 null, uniqueName + " Owner", null,
                 null, null, null,
+                null,
                 uniqueName, "Bengaluru", null, null, null, 4, "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Deluxe King", totalUnits, 4, new BigDecimal("8000.00"))),
                 null));

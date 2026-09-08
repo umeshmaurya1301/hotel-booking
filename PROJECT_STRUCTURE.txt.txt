@@ -1271,7 +1271,7 @@ Not in the rubric. Added last, only if tests and README are complete.
 
 
 16.1 Where the build has actually reached
-Phases 0 through 4 are built; phases 5 onward are designed here but not yet written. What
+Phases 0 through 5 are built; phases 6 onward are designed here but not yet written. What
 exists today: the scaffold and entity core (0/1, as revised in 0.1); onboarding, inventory
 materialisation and pricing (2) — the ownership hierarchy including the group-of-one rule,
 per-night DailyInventory rows with the check constraints of 5.2.4 layer 3 enforced by the
@@ -1280,25 +1280,23 @@ admin endpoints for onboarding/extend/reprice/rate-override, and a demo seed pro
 reservation and locking (3) — the atomic conditional UPDATE of 5.2.1, total night ordering per
 5.3, all-or-nothing multi-night reservation, multi-unit reservation, per-night price snapshots
 on line items, the optional in-JVM lock of 5.2.4 layer 1, and the BookingSweeper of 4.4 for
-hold expiry and CONFIRMED → COMPLETED; and payment, SPI and resilience (4) — the
+hold expiry and CONFIRMED → COMPLETED; payment, SPI and resilience (4) — the
 PaymentGatewayProvider SPI with three mock providers and a router (6), a hand-written circuit
 breaker standing in for Resilience4j (7.1, see 16.2), timeout and idempotency-gated retry via
 Spring's native @Retryable (7.3/7.4), per-provider @ConcurrencyLimit as the bulkhead (7.5), the
 full stuck-transaction resolution of 7.6 — the status-check ladder, payment_status_check
 records, the inventory-hold-window release on its own clock, the auto-reversal deadline, and
 MANUAL_REVIEW with its admin resolution endpoint — and idempotency layer (a), client → API,
-via msgId and an idempotency_records table (8a). What is not: refunds/reversals/ledger
-bookkeeping (5) — the state transitions this phase's reconciliation loop makes (CONFIRMED vs
-REVERSED, PAYMENT_FAILED) are correct, but no LedgerEntry row is written yet, and the
-gateway's own refund/reverse methods still throw UnsupportedOperationException; the
-request/response envelope (6); webhooks, HMAC and the data protection layer (7) — idempotency
-layer (c) waits on the inbound webhook this introduces; and search (8).
-Two structural notes on what phase 2 added beyond the tree in 2.3: controllers are grouped
-by caller (controller.admin, controller.user, controller.webhook, controller.advice) as
-11.4 requires, and a minimal GlobalExceptionHandler mapping error codes to HTTP status was
-pulled forward from phase 6 — without it every domain exception surfaces as a 500, which
-would make the phase-2 endpoints look broken rather than scoped. The envelope itself is
-still phase 6, and adopting it will not change any controller (11.2).
+via msgId and an idempotency_records table (8a); and cancellation, refund, reversal and the
+ledger (5) — three RefundPolicy strategies behind RefundPolicyFactory resolved per property
+group (9.3), the append-only LedgerEntry with the sum(REFUND)+sum(REVERSAL)<=sum(CHARGE)
+invariant checked before any debit is written (9.4), the cancellation flow of 9.5 transcribed
+step-for-step, and ReversalService as the single place every scenario in 9.2 goes through —
+late settlement after an expired hold, and admin-initiated MANUAL_CORRECTION for a duplicate
+charge on an already-settled booking (which required a small, explicitly-documented addition
+to the Phase 1 BookingState transition table — see 16.4). What is not: the request/response
+envelope (6); webhooks, HMAC and the data protection layer (7) — idempotency layer (c) waits
+on the inbound webhook this introduces; and search (8).
 Two structural notes on what phase 2 added beyond the tree in 2.3: controllers are grouped
 by caller (controller.admin, controller.user, controller.webhook, controller.advice) as
 11.4 requires, and a minimal GlobalExceptionHandler mapping error codes to HTTP status was
@@ -1360,6 +1358,39 @@ decision — both verified against a running instance, including the late-settle
 release case landing on REVERSED. But neither writes a LedgerEntry, and PaymentGatewayProvider
 .refund/.reverse still throw UnsupportedOperationException. The booking-level story is
 complete; the money-movement bookkeeping is Phase 5's job, not simulated here.
+
+16.4 Phase 5 findings
+Phase 4's gap is now closed: ReversalService.reverse and CancellationService both write the
+LedgerEntry the previous phase deferred, and the mock providers' refund/reverse now return a
+real result instead of throwing. RefundPolicy's signature was extended from the phase-4-era
+(Booking, Instant) to (Booking, ZoneId, Instant): computing "hours until check-in" needs the
+check-in date resolved to an instant in the property's own zone, not the server's, for the
+same reason design doc 4.5 cares about property-local dates everywhere else — this was a
+signature this document had itself locked in an earlier revision, refined now that the
+policies were actually being written rather than left unbuilt.
+A structural gap, found only by running the late-settlement scenario end to end rather than
+by reading the code: the reconciliation loop's SETTLED branch called ReversalService.reverse
+without ever having recorded the CHARGE for the payment that had just settled. Since
+LedgerService.assertWithinInvariant computes remaining balance as sum(CHARGE) minus what is
+already refunded/reversed, a booking with zero charges on its ledger has zero remaining
+balance — so the very first reversal attempt against a legitimately-just-settled payment was
+rejected with REFUND_EXCEEDS_CHARGE, on a payment that had, in fact, just settled. Fixed by
+recording the charge before deciding what happens to the booking, in both the automated
+ladder and the admin MANUAL_REVIEW resolution path: money moved in either case, and the
+charge is real regardless of what happens to the booking next.
+A second gap, this one structural rather than a bug: design doc 9.2 lists DUPLICATE_CHARGE
+and MANUAL_CORRECTION as reversal reasons, both of which can apply to a booking that already
+settled normally — but the Phase 1 BookingState transition table only wired REVERSED from
+PAYMENT_UNKNOWN and MANUAL_REVIEW, with no path from CONFIRMED. Building the admin manual-
+reversal endpoint the design document calls for meant adding CONFIRMED -> REVERSED to that
+table. This is a deliberate, documented change to a state machine that shipped in Phase 1
+with full cartesian-product test coverage — the existing test's mirrored table was updated to
+match rather than left to fail, since a broken existing test is worse than a corrected one.
+Verified live end to end: full refund with ample notice, a zero-refund same-day cancellation
+skipping the gateway and the ledger entirely (nothing moved, nothing to record), the 50%
+policy at exactly the 24-hour boundary, admin manual reversal moving a CONFIRMED booking to
+REVERSED with a balanced ledger, and — after the fix above — a genuinely late settlement
+producing both a CHARGE and a REVERSAL entry that net to zero.
 
 17. Implementation Plan
 Phase 1 — Entity core (highest rubric weight; revised mid-course, see 0.1)

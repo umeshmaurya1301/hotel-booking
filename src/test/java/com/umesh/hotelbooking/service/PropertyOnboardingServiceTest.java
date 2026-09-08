@@ -80,6 +80,7 @@ class PropertyOnboardingServiceTest {
         return new OnboardPropertyRequest(
                 null, name + " Owner", "owner@example.test",
                 null, null, null,
+                null,
                 name, city, "Central", null, null, 4, "Asia/Kolkata", "INR",
                 Set.of(Amenity.WIFI, Amenity.PARKING),
                 List.of(new RoomTypeRequest("Deluxe King", 10, 2, new BigDecimal("8000.00"))),
@@ -106,6 +107,7 @@ class PropertyOnboardingServiceTest {
         OnboardPropertyRequest second = new OnboardPropertyRequest(
                 first.ownerUid(), null, null,
                 first.propertyGroupUid(), null, null,
+                null,
                 "Meridian Mumbai", "Mumbai", "BKC", null, null, 5, "Asia/Kolkata", "INR",
                 Set.of(Amenity.WIFI),
                 List.of(new RoomTypeRequest("Deluxe King", 20, 2, new BigDecimal("11000.00"))),
@@ -136,6 +138,7 @@ class PropertyOnboardingServiceTest {
     void onboardingMaterialisesOneRowPerNightPerRoomType() {
         OnboardPropertyRequest request = new OnboardPropertyRequest(
                 null, "Two Room Types Owner", null, null, null, null,
+                null,
                 "Twin Types Hotel", "Chennai", null, null, null, 3, "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Standard", 5, 2, new BigDecimal("3000.00")),
                         new RoomTypeRequest("Suite", 2, 4, new BigDecimal("9000.00"))),
@@ -176,6 +179,7 @@ class PropertyOnboardingServiceTest {
     void materialisedRowsCarryThePriceTheStrategyProduced() {
         OnboardPropertyRequest request = new OnboardPropertyRequest(
                 null, "Surge Owner", null, null, null, null,
+                null,
                 "Surge Hotel", "Mumbai", null, null, null, 4, "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Deluxe King", 10, 2, new BigDecimal("8000.00"))),
                 "WEEKEND_SURGE");
@@ -201,6 +205,7 @@ class PropertyOnboardingServiceTest {
     void cityIsStoredNormalisedForSearchAndOriginalForDisplay() {
         OnboardPropertyRequest request = new OnboardPropertyRequest(
                 null, "Casing Owner", null, null, null, null,
+                null,
                 "Casing Hotel", "  BENGALURU  ", null, null, null, 3, "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Std", 2, 2, new BigDecimal("1000.00"))),
                 null);
@@ -219,6 +224,7 @@ class PropertyOnboardingServiceTest {
     void anUnknownOwnerUidIsRejected() {
         OnboardPropertyRequest request = new OnboardPropertyRequest(
                 "no-such-owner", null, null, null, null, null,
+                null,
                 "Orphan Hotel", "Pune", null, null, null, 3, "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Std", 2, 2, new BigDecimal("1000.00"))),
                 null);
@@ -231,6 +237,7 @@ class PropertyOnboardingServiceTest {
     void anUnknownGroupUidIsRejected() {
         OnboardPropertyRequest request = new OnboardPropertyRequest(
                 null, "Some Owner", null, "no-such-group", null, null,
+                null,
                 "Orphan Hotel", "Pune", null, null, null, 3, "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Std", 2, 2, new BigDecimal("1000.00"))),
                 null);
@@ -243,6 +250,7 @@ class PropertyOnboardingServiceTest {
     void neitherOwnerUidNorOwnerNameIsRejected() {
         OnboardPropertyRequest request = new OnboardPropertyRequest(
                 null, null, null, null, null, null,
+                null,
                 "Ownerless Hotel", "Pune", null, null, null, 3, "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Std", 2, 2, new BigDecimal("1000.00"))),
                 null);
@@ -256,6 +264,7 @@ class PropertyOnboardingServiceTest {
     void anUnparseableZoneIsRejectedBeforeAnythingIsWritten() {
         OnboardPropertyRequest request = new OnboardPropertyRequest(
                 null, "Zone Owner", null, null, null, null,
+                null,
                 "Nowhere Inn", "Pune", null, null, null, 3, "Mars/Olympus", "INR", null,
                 List.of(new RoomTypeRequest("Std", 2, 2, new BigDecimal("1000.00"))),
                 null);
