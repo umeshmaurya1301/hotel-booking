@@ -1,0 +1,33 @@
+# MySQL 8 reference profile (design doc 13.1) — NOT active by default. application.yml sets
+# no `spring.profiles.active`, so nothing here loads unless a run explicitly opts in with
+# `--spring.profiles.active=mysql`. H2 stays the default specifically so `./gradlew bootRun`
+# works first try with nothing installed (13.1's own argument: reviewer friction is the real
+# risk). This file demonstrates the MySQL knowledge without imposing that setup cost on anyone
+# who does not ask for it.
+#
+# Every value below inherits from application.yml except what is overridden here — the
+# datasource, JPA dialect/ddl-auto, and a HikariCP pool size. inventory, booking, payment,
+# pricing, search, webhook, api and logging config are unaffected by this profile.
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:hotelbooking}?useSSL=false&serverTimezone=UTC
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${DB_USERNAME:hotelbooking}
+    password: ${DB_PASSWORD:}
+    hikari:
+      # Small and fixed, not autosized: this is a reference profile nobody has load-tested
+      # against a real MySQL instance, and a pool sized off a guess is worse than one sized
+      # off nothing. 10 is comfortably above this project's own request-handling needs (no
+      # endpoint here holds a connection for anything beyond one short transaction) and
+      # comfortably below the "surprise a shared MySQL instance" range.
+      maximum-pool-size: 10
+
+  jpa:
+    # validate, never create-drop: a reference profile that could drop a real schema on boot
+    # is a loaded gun. The live schema for this profile is schema-mysql.sql (never executed by
+    # the application - a human runs it once against a real database before this profile is
+    # ever pointed at it), so validate only checks the entities agree with what is already
+    # there; it never writes DDL itself.
+    hibernate:
+      ddl-auto: validate
+    database-platform: org.hibernate.dialect.MySQLDialect

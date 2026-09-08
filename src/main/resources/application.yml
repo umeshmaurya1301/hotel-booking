@@ -84,9 +84,22 @@ payment:
     intervals: [30s, 1m, 2m, 5m, 7m, 15m, 30m, 1h]
     jitter-ratio: 0.2
     inventory-hold-window: 15m
-    auto-reversal-deadline: 2h
+    # Must stay longer than the cumulative time to exhaust every interval above (~3h00m30s):
+    # PaymentReconciliationService checks this deadline before it checks whether the ladder
+    # is exhausted (7.6.2's "presumed failure takes precedence"), so a deadline shorter than
+    # or too close to that cumulative time makes MANUAL_REVIEW-via-exhaustion unreachable in
+    # practice - every stuck payment would be presumed FAILED moments before the final rung
+    # could fire. Found by Phase 9's StuckTransactionResolutionTest with the previous value
+    # (2h, which is ~30s short) never reaching MANUAL_REVIEW; see PROJECT_STRUCTURE.txt.txt
+    # 16.8 for the full account.
+    auto-reversal-deadline: 210m
   idempotency:
+    # How long a completed idempotency record is kept before eviction (design doc 8a) - must
+    # exceed the longest plausible client retry window, which is why it is hours, not minutes.
     retention: 24h
+    sweeper:
+      enabled: true
+      fixed-delay: 1h
   reconciliation:
     enabled: true
     fixed-delay: 15s

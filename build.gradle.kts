@@ -26,6 +26,10 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
 	compileOnly("org.projectlombok:lombok")
 	runtimeOnly("com.h2database:h2")
+	// MySQL reference profile only (design doc 13.1, application-mysql.yml) - not active by
+	// default. runtimeOnly, not implementation: the profile must be runnable if opted into,
+	// never compilable-against, so nothing in main code can accidentally depend on it.
+	runtimeOnly("com.mysql:mysql-connector-j")
 	annotationProcessor("org.projectlombok:lombok")
 	testImplementation("org.springframework.boot:spring-boot-starter-actuator-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")

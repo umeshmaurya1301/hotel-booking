@@ -1271,8 +1271,9 @@ Not in the rubric. Added last, only if tests and README are complete.
 
 
 16.1 Where the build has actually reached
-Phases 0 through 5 are built; phases 6 onward are designed here but not yet written. What
-exists today: the scaffold and entity core (0/1, as revised in 0.1); onboarding, inventory
+Phases 0 through 9 are built; only the explicitly-optional Phase 10 extras (Swagger/OpenAPI,
+AES field encryption, Docker — gated on Phase 9 being complete, which it now is) remain
+unbuilt. What exists today: the scaffold and entity core (0/1, as revised in 0.1); onboarding, inventory
 materialisation and pricing (2) — the ownership hierarchy including the group-of-one rule,
 per-night DailyInventory rows with the check constraints of 5.2.4 layer 3 enforced by the
 database, three pricing strategies behind a registry, the eager bounded-horizon materialiser,
@@ -1315,7 +1316,17 @@ architecture resolving design doc 10.1's unimplementable literal filter signatur
 SearchFilter/BatchSearchFilter beans run in order() sequence by SearchFilterChain, the
 two-query-per-collection fix for PropertyRepository's fetch-join duplication bug (see 16.7),
 and the advisory, non-locking, cap-not-paginate search endpoint at
-POST /api/v1/user/properties/search. What is not: only Phase 9's documentation and polish.
+POST /api/v1/user/properties/search; and, as of Phase 9, the hardening pass in full - the nine
+previously-missing highest-value tests from 15.1 (breaker-open fallback, the full
+stuck-transaction ladder including the MANUAL_REVIEW-reachability bug that phase found and
+fixed, the sweeper-versus-payment optimistic-lock race, payment idempotency, the refund
+invariant as a real running total, and refund-policy substitution), the full README this
+document's own 18 specifies, a committed and verified MySQL reference profile
+(application-mysql.yml, schema-mysql.sql), IdempotencyRecordSweeper closing the
+payment.idempotency.retention gap, and the final sweep (gradlew's executable bit, the
+package-info gaps in controller.admin/advice/user, and a stale Payment.createdAt/updatedAt gap
+in Instant.now() usage - see 16.8 for the full account of what that phase's own tests found).
+What is not: only the explicitly-optional Phase 10 extras.
 Two structural notes on what phase 2 added beyond the tree in 2.3: controllers are grouped
 by caller (controller.admin, controller.user, controller.webhook, controller.advice) as
 11.4 requires, and a minimal GlobalExceptionHandler mapping error codes to HTTP status was
@@ -1757,6 +1768,84 @@ persistence code, but if any later phase does add a second multi-collection eage
 anywhere in the codebase, PropertyRepository's Javadoc is the place that already explains why
 the obvious one-query version silently corrupts data in this Hibernate version, and is worth
 reading before repeating the mistake rather than re-discovering it the same way.
+
+16.8 Phase 9 findings
+The most important thing in this report, per this phase's own instruction: the nine new tests
+found a real bug in the stuck-transaction path, not a cosmetic one. PaymentReconciliationService
+.reconcileOne checks the auto-reversal deadline before it ever polls the gateway or checks
+whether the status-check ladder is exhausted ("presumed failure takes precedence over the
+ladder... regardless of how many attempts remain"). With the shipped default configuration -
+eight intervals summing to roughly 2h00m30s of ladder time, and a 2-hour auto-reversal-deadline
+- that ordering meant the deadline always won by about thirty seconds: MANUAL_REVIEW via ladder
+exhaustion was unreachable in practice, even though AbstractMockProvider's own Javadoc
+explicitly documents STUCK_FOREVER as driving a payment "to exhaustion and MANUAL_REVIEW". Every
+stuck payment would instead resolve to a presumed-FAILED state roughly thirty seconds before the
+final rung could ever fire. StuckTransactionResolutionTest's ladder-exhaustion scenario failed
+against the original 2h value, which is what surfaced this; fixed by widening
+payment.status-check.auto-reversal-deadline to 210m (comfortably past the ~3h a full nine-check
+cycle actually takes to flag MANUAL_REVIEW), with the reasoning recorded directly on the
+property in application.yml so a future config change does not silently reintroduce the same
+near-miss. This is a config-value fix, not a logic change - the precedence order itself
+(deadline before ladder) is left exactly as designed, since 7.6.2's own reasoning for it still
+holds; only the two numbers' relationship to each other was wrong.
+A second, smaller bug the same tests turned up: PaymentService.newPaymentAttempt never set
+createdAt/updatedAt on a new Payment, so both fell through to that entity's own @PrePersist
+Instant.now() fallback - real wall-clock time, never the injected Clock, on every single payment
+attempt ever created, including under every MutableClock-driven test in this suite. Contrast
+BookingCreator, which explicitly sets Booking.createdAt from Instant.now(clock); Payment simply
+never got the equivalent line. Fixed by setting both fields explicitly in newPaymentAttempt.
+Not fixed, and flagged rather than silently left: Payment's @PreUpdate still stamps updatedAt
+with a bare Instant.now() on every subsequent touch (every state transition), which cannot be
+made clock-deterministic without either injecting a clock into a non-Spring-managed JPA
+lifecycle callback (not possible in the ordinary sense) or moving to a clock-aware auditing
+listener (a real architectural change, not a one-line fix, and out of this hardening phase's own
+"no new production capability" boundary). Booking has no equivalent @PreUpdate stamping at all,
+so it does not share this gap - Payment is the only entity with it, and it is now the only
+place in the codebase where the Phase 0 "Clock is injected everywhere" rule is knowingly not
+fully honoured, for a reason recorded here rather than left for a future reader to rediscover by
+grepping.
+Section 3.4's ordering assertion held exactly as claimed: CancellationOrderingTest's InOrder
+verification confirms InventoryReservationService.release is called before the gateway's
+refund() call, and a second test confirms a refund the gateway rejects (GatewayOutcome.FAILED)
+still leaves that release standing and the booking CANCELLED - the booking's fate and the
+room's availability are decided independently of whether money has actually moved back yet,
+exactly as CancellationService's own Javadoc claims.
+SweeperPaymentRaceTest was not flaky: fifteen iterations (the task spec's own 10-20 guidance),
+each a fresh property/booking pair raced with a CountDownLatch exactly as
+InventoryReservationConcurrencyTest already does, passed cleanly on the first run with no
+retries needed. The optimistic-lock behaviour under real contention was exactly what Booking's
+@Version column is supposed to produce: whichever transaction's UPDATE commits first wins
+outright, and the loser's entire transaction rolls back rather than partially applying - when
+the sweeper lost, PaymentService.pay's uncaught ObjectOptimisticLockingFailureException rolled
+back the whole payment attempt (no Payment row, no ledger entry, nothing partially written);
+when the payment won, BookingSweeper's own catch(OptimisticLockingFailureException) inside
+expireOne counted it as skipped and moved on, exactly as BookingSweeperTest's single-threaded
+"already confirmed" scenario already implied but never proved concurrently.
+Design doc 13.1's claim that application-mysql.yml and schema-mysql.sql "are committed" was
+not the only stale assertion this phase's own read-everything approach turned up. Reading every
+package for the package-info sweep (7.2) found controller.webhook's package-info still reading
+"Empty for now - PaymentWebhookController... arrive[s] in Phase 7", written before Phase 7
+existed and never updated after it shipped that exact controller two phases ago. Both are the
+same failure mode design doc 19's risk register names for a different context ("a design
+document that describes code that does not exist"): a true-when-written sentence that nobody
+revisits once the thing it described actually arrives. Fixed here alongside adding the three
+genuinely missing package-info files (controller.admin, controller.advice, controller.user -
+present since Phase 6, never given one).
+What 7's final sweep otherwise turned up: TODO/FIXME/XXX, System.out/printStackTrace, and
+Instant.now()/LocalDate.now() outside test support were all clean except the two Payment gaps
+above (both addressed) and one grep false positive (Masker.java's own Javadoc example string
+"411111XXXXXX1111", which is masked-card-number prose, not a marker comment). gradlew's
+executable bit was genuinely broken (mode 100644, confirmed failing sh gradlew otherwise) and
+is fixed (git update-index --chmod=+x gradlew, verified 100755 and a direct ./gradlew --version
+run with no sh prefix).
+Nothing in the resilience stack or elsewhere needed removing under design doc 19's "defend in
+one sentence or remove it" rule - the bulkhead's one sentence is in the README's own key-
+decisions section, and every other resilience component already carried a one-line
+justification from earlier phases that this phase's read-through did not find reason to
+dispute.
+Nothing found in this phase is believed wrong for Phase 10. Phase 10's own scope
+(Swagger/OpenAPI, AES field encryption, Docker) is explicitly gated on tests and README being
+complete first, which this phase's own work is what makes true.
 
 17. Implementation Plan
 Phase 1 — Entity core (highest rubric weight; revised mid-course, see 0.1)

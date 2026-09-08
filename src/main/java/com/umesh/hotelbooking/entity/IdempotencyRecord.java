@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -25,13 +26,14 @@ import java.time.Instant;
  * constraint is what serialises two genuinely concurrent requests carrying the same id — the
  * database constraint does the work, not application locking.
  *
- * <p>Retention (evicting rows after {@code payment.idempotency.retention}) is a stated
- * assumption, not an omission: unbounded growth on a dedupe table is a real production
- * problem, and the window must exceed the longest plausible client retry window, which is
- * why it is hours, not minutes.
+ * <p>Retention (evicting rows after {@code payment.idempotency.retention}) is enforced by
+ * {@code IdempotencyRecordSweeper} (Phase 9): unbounded growth on a dedupe table is a real
+ * production problem, and the window must exceed the longest plausible client retry window,
+ * which is why it is hours, not minutes.
  */
 @Entity
-@Table(name = "idempotency_records")
+@Table(name = "idempotency_records",
+        indexes = @Index(name = "idx_idempotency_created_at", columnList = "created_at"))
 @Getter
 @Setter
 @NoArgsConstructor
