@@ -100,7 +100,7 @@ class BookingIdempotencyApiTest {
     void theSameMsgIdPostedTwiceReturnsIdenticalDataAndHoldsInventoryOnce() throws Exception {
         Fixture fixture = onboardRoomType("Idempotent Hotel");
         CreateBookingRequest payload = new CreateBookingRequest(
-                null, fixture.roomTypeUid(), fixture.firstNight(), fixture.firstNight().plusDays(1), 1, 1, 0);
+                null, fixture.roomTypeUid(), fixture.firstNight(), fixture.firstNight().plusDays(1), 1, 1, 0, null);
         String msgId = UUID.randomUUID().toString();
         String body = envelope(msgId, payload);
 
@@ -124,7 +124,7 @@ class BookingIdempotencyApiTest {
     void aDifferentMsgIdWithTheSamePayloadHoldsASecondTime() throws Exception {
         Fixture fixture = onboardRoomType("Distinct MsgId Hotel");
         CreateBookingRequest payload = new CreateBookingRequest(
-                null, fixture.roomTypeUid(), fixture.firstNight(), fixture.firstNight().plusDays(1), 1, 1, 0);
+                null, fixture.roomTypeUid(), fixture.firstNight(), fixture.firstNight().plusDays(1), 1, 1, 0, null);
 
         mockMvc.perform(post("/api/v1/user/bookings")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -143,9 +143,9 @@ class BookingIdempotencyApiTest {
         Fixture fixture = onboardRoomType("Mismatch Hotel");
         String msgId = UUID.randomUUID().toString();
         CreateBookingRequest original = new CreateBookingRequest(
-                null, fixture.roomTypeUid(), fixture.firstNight(), fixture.firstNight().plusDays(1), 1, 1, 0);
+                null, fixture.roomTypeUid(), fixture.firstNight(), fixture.firstNight().plusDays(1), 1, 1, 0, null);
         CreateBookingRequest changed = new CreateBookingRequest(
-                null, fixture.roomTypeUid(), fixture.firstNight(), fixture.firstNight().plusDays(1), 2, 1, 0);
+                null, fixture.roomTypeUid(), fixture.firstNight(), fixture.firstNight().plusDays(1), 2, 1, 0, null);
 
         mockMvc.perform(post("/api/v1/user/bookings")
                         .contentType(MediaType.APPLICATION_JSON).content(envelope(msgId, original)))

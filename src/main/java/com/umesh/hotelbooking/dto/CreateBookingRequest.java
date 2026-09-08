@@ -1,5 +1,6 @@
 package com.umesh.hotelbooking.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -18,6 +19,11 @@ import java.time.LocalDate;
  *     need a separate registration call
  * @param units number of rooms. Capped per booking by {@code @Max}; a booking for 200 rooms
  *     is a group enquiry, not a self-service transaction.
+ * @param guest optional profile details for the guest this booking resolves to (design doc
+ *     12.6.1). Only meaningful when {@code guestUid} is absent — see {@code
+ *     BookingCreator.resolveGuest}: a booking request is not a profile-update endpoint, so
+ *     supplying both an existing {@code guestUid} and {@code guest} details is not an update,
+ *     it is ignored.
  */
 public record CreateBookingRequest(
         String guestUid,
@@ -26,5 +32,6 @@ public record CreateBookingRequest(
         @NotNull LocalDate checkOut,
         @Min(1) @Max(10) int units,
         @Min(1) int adults,
-        @Min(0) int children) {
+        @Min(0) int children,
+        @Valid GuestDetails guest) {
 }

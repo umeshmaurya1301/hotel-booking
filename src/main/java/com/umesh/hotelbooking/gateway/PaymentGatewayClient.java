@@ -48,7 +48,7 @@ public class PaymentGatewayClient {
             multiplier = 2.0,
             jitter = 20,
             timeUnit = TimeUnit.MILLISECONDS)
-    public GatewayOutcome callStatus(PaymentGatewayProvider provider, String providerReference) {
+    public PaymentResult callStatus(PaymentGatewayProvider provider, String providerReference) {
         return provider.status(providerReference);
     }
 }

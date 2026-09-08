@@ -1301,9 +1301,15 @@ GlobalExceptionHandler's status mapping and every DomainException subclass, a se
 correlationId threaded through logs (MDC), IdempotencyRecord and LedgerEntry, apiType derived
 per-route by an interceptor reading an @Api annotation rather than a client-supplied field, the
 msgId migration that made booking creation idempotent for the first time (see 16.5), and the
-trivially-stubbed @RequireRole/RoleInterceptor role separation of 11.4. What is not: webhooks,
-HMAC and the data protection layer (7) — idempotency layer (c) waits on the inbound webhook
-this introduces; and search (8).
+trivially-stubbed @RequireRole/RoleInterceptor role separation of 11.4; and, as of Phase 7,
+webhooks and the data protection layer (7) in full — the reference-only PII separation of
+12.6.3 (Guest gained real profile fields, redactable in place), @Sensitive and its Jackson
+serializer, the PayloadRedactor/LogRedactionConverter two-layer defence of 12.6.5,
+GuestRedactionService with the ledger-integrity test 12.6.3 calls for, HMAC signing and
+verification with constant-time comparison, webhook_event_log with the same persist-before-
+process discipline the idempotency table established, idempotency layer (c) on
+(provider_code, event_id) plus the FSM-level no-op guard a unique constraint alone cannot
+provide, and disabled-by-default signed outbound delivery (see 16.6). What is not: search (8).
 Two structural notes on what phase 2 added beyond the tree in 2.3: controllers are grouped
 by caller (controller.admin, controller.user, controller.webhook, controller.advice) as
 11.4 requires, and a minimal GlobalExceptionHandler mapping error codes to HTTP status was
@@ -1530,6 +1536,146 @@ authenticated by HMAC instead of the X-Role header — RoleInterceptor's "no hea
 through" default means it would technically not block an unauthenticated webhook call today if
 someone pointed a browser at it directly, which is fine only because the controller does not
 exist yet. Phase 7 should not rely on RoleInterceptor for anything on that path.
+
+16.6 Phase 7 findings
+Guest was a two-field placeholder — id and guestUid, its own Javadoc saying profile data was
+"built in a later phase" — and 12.6's entire redaction story was undemonstrable against it.
+A redaction test against an entity with nothing to redact proves nothing; the PII fields
+(fullName, email, phone, address, dateOfBirth, redactedAt) had to be built before they could
+be protected, so this phase built the data before building the guard around it, in the order
+the task spec's own §0.1 called out as the trap to avoid (build webhooks first, retrofit
+redaction onto an audit table already storing raw payloads). Booking creation now optionally
+carries GuestDetails, resolveGuest populates a fresh guest row from it, and — the one rule
+worth restating because it is easy to get backwards — supplying both an existing guestUid and
+GuestDetails on the same request silently ignores the details rather than updating the
+existing person's record. A booking request is not a profile-update endpoint.
+The mock providers carried no PAN-, CVV- or contact-shaped data at all before this phase —
+PaymentRequest was (providerReference, method, bankCode, amount, currency, simulate) and
+PaymentResult was (outcome, providerReference, message), neither with anywhere sensitive data
+could even live. Added: optional instrument fields on PaymentRequest (cardNumber, cvv,
+billingName, vpa, walletId, contactPhone — all null on every real call site, since nothing in
+this codebase collects real instrument data from a guest), and a providerPayload field on
+PaymentResult carrying a synthetic, obviously-fake JSON blob (4111 1111 1111 1111,
+asha@example.com) that AbstractMockProvider builds itself when the request's own fields are
+absent. This is what makes 12.6.6's "the redaction path executes rather than merely being
+described" literally true: NoPiiInAuditOrLogsTest drives a real flow through it and the test
+would fail — verified by hand — if PayloadRedactor were stubbed to identity.
+That last change forced a signature change beyond the task spec's own file list:
+PaymentGatewayProvider.status(String) returned a bare GatewayOutcome, with no way to carry a
+payload at all. Changed it to return PaymentResult (the same type initiate() already
+returned), rippling into PaymentGatewayClient.callStatus and PaymentReconciliationService's
+polling loop. The alternative — leaving status() unable to carry a payload — would have made
+it structurally impossible for sensitive-shaped data to ever reach
+PaymentStatusCheck.responseSummary, which is the one pre-existing table this phase was
+explicitly told to wire redaction into. Noting this because it is a real deviation from "only
+touch the files listed," made because the alternative made a stated requirement unbuildable.
+A related loose end, not a bug: PaymentGatewayProvider.verifyCallback(byte[], String, String)
+— declared back in Phase 4, thrown as UnsupportedOperationException with a comment that it
+would be "exercised starting in the phase that... receives webhooks" — is still unused. This
+phase's actual signature-verification design is centralised (crypto.SignatureVerifier reading
+per-provider secrets from WebhookProperties), not routed through the per-provider gateway
+interface Phase 4 anticipated. The two designs both work; they simply never met. Left
+verifyCallback exactly as it was rather than wiring it to something it was never called by, so
+a later phase (or reviewer) does not mistake it for load-bearing. It is a reasonable removal
+candidate whenever Phase 9 hardening touches the gateway package.
+A genuine bug, not merely a design tension, surfaced by actually running the webhook flow
+rather than by reasoning about it: PaymentSettlementService.settle/fail, extracted verbatim
+from the status-check ladder and resolveManualReview (§8.4, see below), silently did nothing
+when called from InboundWebhookService. The ladder and resolveManualReview both load Payment
+and Booking inside a transaction they already hold open (TransactionTemplate.execute), so
+those entities stay attached for the whole call chain and Hibernate's dirty-checking flushes
+the mutations at commit. InboundWebhookService has no such ambient transaction — it calls
+PaymentRepository.findByProviderReference as a bare repository call, which opens and commits
+its own mini-transaction and hands back an already-detached entity. Passing that detached
+entity into PaymentSettlementService.settle, itself a separate @Transactional method opening
+a brand-new transaction, mutates an object with no persistence context to be dirty-checked
+against — the state transitions and the ledger entry looked correct in memory and were never
+persisted. WebhookIdempotencyTest caught this immediately (booking stuck at PAYMENT_UNKNOWN
+instead of reaching CONFIRMED) the first time it was run against real Spring transaction
+semantics rather than assumed by inspection. Fixed by adding settleByProviderReference and
+failByProviderReference to PaymentSettlementService: they do the Payment/Booking lookup
+*inside* their own transactional boundary, so the entities are attached for the whole method,
+mutations included. The ladder and resolveManualReview keep calling the original
+settle(Payment, Booking, String)/fail(Payment, Booking) overloads unchanged, since they
+already hold their own transaction open before the entities are ever loaded.
+The @RequestBody byte[] choice over ContentCachingRequestWrapper (design doc 12.2's literal
+suggestion): a deliberate simplification, not an oversight. byte[] gives the exact bytes that
+were signed with no filter, no wrapper, and no risk of the cache being consumed (by a logging
+filter, say) before the signature check reads it. ContentCachingRequestWrapper solves a
+different problem — re-reading a stream-based body multiple times — that does not exist here,
+since deserialisation happens once, from the byte[], after verification. Confirmed rather than
+assumed: RequestEnvelopeAdvice.supports() only returns true for ApiRequest-typed bodies, so a
+byte[] parameter is untouched by it regardless.
+The three Phase 6 exemptions (task spec §11), all real decisions:
+  - ResponseEnvelopeAdvice's basePackages narrowed from the bare controller package to {
+    controller.admin, controller.user } explicitly, excluding controller.webhook by omission
+    rather than by a negative check — a future controller package added under controller.*
+    is not silently swept in. This forced ProbeController, the Phase 6 test fixture living
+    directly under controller, to move to controller.user (five test files' imports updated
+    accordingly) — a controller outside the two covered packages would no longer prove
+    anything about enveloping either way.
+  - WebConfig excludes /api/v1/webhooks/** from RoleInterceptor explicitly, rather than
+    relying on the interceptor's existing "missing header passes" stub default. The behaviour
+    is identical either way today; the explicit exclusion is what stops a future tightening
+    of that stub (adding real enforcement) from silently starting to block webhooks, which
+    authenticate by HMAC and were never meant to carry a role header at all.
+  - WebhookExceptionHandler is the one place a 2xx-everywhere API deliberately breaks its own
+    rule: SignatureVerificationException (bad signature, unknown provider, stale timestamp)
+    returns 401, the single non-2xx response this codebase's SYSTEM category ever sends,
+    because a request that will never be accepted must not be retried, and acking one 200
+    would tell a forger its forgery worked. Everything else — including a genuine bug in our
+    own processing — acks 200, because a provider's retry policy amplifying our own failure
+    into a storm is a worse outcome than fixing it from the event log at our own pace.
+PaymentSettlementService (§8.4): extracted settle/fail — transition the payment, transition
+the booking, release inventory if held, write the ledger charge, reverse via ReversalService
+when the hold already lapsed — from logic that used to live separately inside
+PaymentReconciliationService's pollGateway SETTLED branch and inside resolveManualReview's
+SETTLED branch. No behavioural change for either of those two callers: same transitions, same
+ledger call, same reversal condition, in the same order. What is new is the FSM-level
+idempotency guard at the top of both methods (return immediately if already SETTLED/FAILED) —
+harmless for the ladder and admin paths, which already gate on specific pre-states before
+calling in, but load-bearing for the webhook path, where a provider can legitimately deliver
+two different eventIds for the same settlement and the (provider_code, event_id) unique
+constraint has no way to catch that, since it is a different key both times.
+REFUND_COMPLETED is logged and acknowledged but never processed — a deliberate scope
+boundary, not a gap. Refunds already have a synchronous owner: CancellationService writes the
+REFUND ledger entry itself as part of the cancellation flow (design doc 9.5, Phase 5). Wiring
+REFUND_COMPLETED to write a second entry from the async webhook path would open a second write
+path into the same ledger for the same logical event, with no clear rule for which one wins
+or how to detect the other already ran. The webhook_event_log row still records that the
+callback arrived, which is what 9.6's audit trail is for; it simply does not drive state.
+Two Jackson 3 / Logback platform findings, in the spirit of 16.2/16.3's own:
+  - JsonNode.asText() is deprecated in Jackson 3 in favour of asString() (and asString(String)
+    for the default-value overload). Compiles and runs under Jackson 2 idioms, then fails the
+    build under -Werror the moment anything calls the deprecated method — a second, distinct
+    trap from the tools.jackson.* package relocation 16.3 already found, in the same class.
+  - PatternLayoutBase.getDefaultConverterMap() (the natural way to register a custom Logback
+    conversion word programmatically, e.g. in a test) is deprecated in the Logback version
+    this Spring Boot 4.1.1 pulls in, in favour of getInstanceConverterMap(), which is keyed by
+    Supplier<DynamicConverter> rather than a class-name String. LogRedactionConverterTest uses
+    the new form; logback-spring.xml's own <conversionRule converterClass="..."/> is
+    unaffected, since that XML attribute is a different, still-current registration path.
+Everything else found was a judgement call rather than a defect, recorded here so a reviewer
+does not read it as an oversight: HmacSigner.verify decodes hex before comparing specifically
+so a same-value signature in a different hex case still verifies (design doc's own "handles
+case differences... for free") — this is not the same claim as "a wrong-case signature is
+still accepted despite being wrong," and HmacSignerTest is careful to vary only the hex
+digits, never the sha256= prefix, to keep the two claims from collapsing into each other in
+the test itself. WebhookProperties.outbound.secret and .outbound.retry are not part of the
+YAML shape the task spec's own §7.2 gives verbatim; both were added because HmacSigner.sign
+needs some secret to sign outbound notifications with, and @Retryable's numeric attributes
+must be compile-time constants (the same constraint PaymentGatewayClient's own Javadoc already
+states), so the retry literal on WebhookHttpSender mirrors config rather than reading it.
+WebhookHttpSender itself is a small addition beyond the task spec's own file list, for the
+same reason PaymentGatewayClient is a separate bean from its callers: @Retryable on a method
+that WebhookDispatcher called on itself would be silently skipped by Spring's self-invocation
+limitation, exactly as it would have been for PaymentSettlementService's transaction boundary
+above — the same class of AOP-proxy trap catching two different pieces of this phase.
+Nothing found here looks wrong for Phase 8 or 9. The one thing worth flagging forward: Phase 8
+(search) will want AvailabilityFilter to read DailyInventory the same read-only way admin
+inventory views already do; nothing in this phase touches that path, so there is no known
+interaction, but it is the next place a similarly quiet transaction-boundary assumption could
+hide.
 
 17. Implementation Plan
 Phase 1 — Entity core (highest rubric weight; revised mid-course, see 0.1)

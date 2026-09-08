@@ -42,7 +42,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
         LocalDate checkIn = fixture.firstNight();
 
         BookingResponse booking = bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(3), 1, 2, 0));
+                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(3), 1, 2, 0, null));
 
         assertThat(booking.nights()).isEqualTo(3);
         assertThat(booking.lineItems()).hasSize(3);
@@ -59,7 +59,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
         LocalDate checkIn = fixture.firstNight();
 
         BookingResponse booking = bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 1, 1, 0));
+                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 1, 1, 0, null));
 
         assertThat(booking.lineItems()).hasSize(1);
         assertThat(booking.lineItems().get(0).stayDate()).isEqualTo(checkIn);
@@ -72,7 +72,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
         LocalDate checkIn = fixture.firstNight();
 
         BookingResponse booking = bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(3), 2, 4, 0));
+                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(3), 2, 4, 0, null));
 
         assertThat(booking.lineItems()).allSatisfy(item -> {
             assertThat(item.units()).isEqualTo(2);
@@ -92,7 +92,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
                 new RateOverrideRequest(checkIn.plusDays(1), new BigDecimal("12000.00"), null));
 
         BookingResponse booking = bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(3), 1, 1, 0));
+                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(3), 1, 1, 0, null));
 
         assertThat(booking.lineItems()).extracting(item -> item.pricePerUnit())
                 .containsExactly(
@@ -110,7 +110,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
         Fixture fixture = onboardRoomType("Snapshot Hotel", 5);
         LocalDate checkIn = fixture.firstNight();
         BookingResponse booking = bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(2), 1, 1, 0));
+                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(2), 1, 1, 0, null));
         BigDecimal originalTotal = booking.totalAmount();
 
         inventoryAdminService.reprice(new RepriceRequest(
@@ -131,12 +131,12 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
         LocalDate checkIn = fixture.firstNight();
 
         assertThatThrownBy(() -> bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 2, 9, 0)))
+                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 2, 9, 0, null)))
                 .isInstanceOf(GuestCapacityExceededException.class);
 
         // The same guest count across enough rooms is fine.
         assertThat(bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 3, 9, 0)))
+                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 3, 9, 0, null)))
                 .isNotNull();
     }
 
@@ -146,7 +146,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
         LocalDate checkIn = fixture.firstNight();
 
         assertThatThrownBy(() -> bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 1, 3, 3)))
+                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 1, 3, 3, null)))
                 .isInstanceOf(GuestCapacityExceededException.class);
     }
 
@@ -156,7 +156,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
         LocalDate beyond = fixture.firstNight().plusYears(1);
 
         assertThatThrownBy(() -> bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, fixture.roomTypeUid(), beyond, beyond.plusDays(1), 1, 1, 0)))
+                null, fixture.roomTypeUid(), beyond, beyond.plusDays(1), 1, 1, 0, null)))
                 .isInstanceOf(InventoryUnavailableException.class);
     }
 
@@ -166,7 +166,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
         LocalDate day = fixture.firstNight();
 
         assertThatThrownBy(() -> bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, fixture.roomTypeUid(), day, day, 1, 1, 0)))
+                null, fixture.roomTypeUid(), day, day, 1, 1, 0, null)))
                 .isInstanceOf(InvalidDateRangeException.class);
 
         assertThat(dailyInventoryRepository
@@ -181,7 +181,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
         LocalDate today = LocalDate.of(2026, 9, 10);
 
         assertThatThrownBy(() -> bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, "no-such-room-type", today, today.plusDays(1), 1, 1, 0)))
+                null, "no-such-room-type", today, today.plusDays(1), 1, 1, 0, null)))
                 .isInstanceOf(RoomTypeNotFoundException.class);
     }
 
@@ -191,7 +191,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
         LocalDate checkIn = fixture.firstNight();
 
         assertThatThrownBy(() -> bookingService.create(freshMeta(), new CreateBookingRequest(
-                "no-such-guest", fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 1, 1, 0)))
+                "no-such-guest", fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 1, 1, 0, null)))
                 .isInstanceOf(GuestNotFoundException.class);
     }
 
@@ -201,13 +201,13 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
         LocalDate checkIn = fixture.firstNight();
 
         BookingResponse booking = bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 1, 1, 0));
+                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 1, 1, 0, null));
 
         assertThat(booking.guestUid()).isNotBlank();
 
         // That guest can then be reused by uid on a later booking.
         BookingResponse second = bookingService.create(freshMeta(), new CreateBookingRequest(
-                booking.guestUid(), fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 1, 1, 0));
+                booking.guestUid(), fixture.roomTypeUid(), checkIn, checkIn.plusDays(1), 1, 1, 0, null));
         assertThat(second.guestUid()).isEqualTo(booking.guestUid());
     }
 
@@ -216,7 +216,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
         Fixture fixture = onboardRoomType("Fetch Hotel", 5);
         LocalDate checkIn = fixture.firstNight();
         BookingResponse created = bookingService.create(freshMeta(), new CreateBookingRequest(
-                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(2), 1, 1, 0));
+                null, fixture.roomTypeUid(), checkIn, checkIn.plusDays(2), 1, 1, 0, null));
 
         BookingResponse fetched = bookingService.find(created.bookingUid());
 

@@ -2,7 +2,7 @@ package com.umesh.hotelbooking.web;
 
 import com.umesh.hotelbooking.config.ApiProperties;
 import com.umesh.hotelbooking.config.ClockConfig;
-import com.umesh.hotelbooking.controller.ProbeController;
+import com.umesh.hotelbooking.controller.user.ProbeController;
 import com.umesh.hotelbooking.controller.advice.GlobalExceptionHandler;
 import com.umesh.hotelbooking.controller.advice.RequestEnvelopeAdvice;
 import com.umesh.hotelbooking.controller.advice.ResponseEnvelopeAdvice;

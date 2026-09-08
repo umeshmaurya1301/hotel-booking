@@ -1,7 +1,7 @@
 package com.umesh.hotelbooking.controller.advice;
 
 import com.umesh.hotelbooking.config.ApiProperties;
-import com.umesh.hotelbooking.controller.ProbeController;
+import com.umesh.hotelbooking.controller.user.ProbeController;
 import com.umesh.hotelbooking.config.ClockConfig;
 import com.umesh.hotelbooking.web.ApiContext;
 import com.umesh.hotelbooking.web.CorrelationIdFilter;

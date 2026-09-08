@@ -29,7 +29,13 @@ public interface PaymentGatewayProvider {
      * reference must not charge twice. */
     PaymentResult initiate(PaymentRequest request);
 
-    GatewayOutcome status(String providerReference);
+    /** Returns a {@link PaymentResult} rather than a bare {@link GatewayOutcome} so a status
+     * poll can carry the same shape of raw provider payload {@code initiate} does — design
+     * doc 12.6.6 needs the redaction path exercised on the status-check path too, since that
+     * is what feeds {@code PaymentStatusCheck.responseSummary}. {@code providerReference()}
+     * on the result mirrors the argument; only {@code outcome} and {@code providerPayload}
+     * carry new information. */
+    PaymentResult status(String providerReference);
 
     RefundResult refund(RefundRequest request);
 

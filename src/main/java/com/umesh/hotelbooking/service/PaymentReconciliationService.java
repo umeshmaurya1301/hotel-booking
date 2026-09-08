@@ -10,7 +10,6 @@ import com.umesh.hotelbooking.entity.GatewayCheckStatus;
 import com.umesh.hotelbooking.entity.Payment;
 import com.umesh.hotelbooking.entity.PaymentState;
 import com.umesh.hotelbooking.entity.PaymentStatusCheck;
-import com.umesh.hotelbooking.entity.ReversalReason;
 import com.umesh.hotelbooking.exception.InvalidPaymentStateException;
 import com.umesh.hotelbooking.exception.InvalidRequestException;
 import com.umesh.hotelbooking.exception.PaymentNotFoundException;
@@ -22,9 +21,11 @@ import com.umesh.hotelbooking.gateway.PaymentCircuitBreaker;
 import com.umesh.hotelbooking.gateway.PaymentGatewayClient;
 import com.umesh.hotelbooking.gateway.PaymentGatewayProvider;
 import com.umesh.hotelbooking.gateway.PaymentGatewayRouter;
+import com.umesh.hotelbooking.gateway.PaymentResult;
 import com.umesh.hotelbooking.repository.BookingRepository;
 import com.umesh.hotelbooking.repository.PaymentRepository;
 import com.umesh.hotelbooking.repository.PaymentStatusCheckRepository;
+import com.umesh.hotelbooking.security.PayloadRedactor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -46,6 +47,12 @@ import java.util.concurrent.ThreadLocalRandom;
  * ladder (do we keep asking the gateway), and the auto-reversal deadline (when do we presume
  * failure). Each payment is resolved in its own transaction, mirroring
  * {@link BookingSweeper}: one poisoned payment must not roll back the whole pass.
+ *
+ * <p>The actual settlement/failure side effects — transition the payment, transition the
+ * booking, release inventory, write the ledger entry — live in {@link
+ * PaymentSettlementService} as of Phase 7 (§8.4 of that phase's task spec), not here: this
+ * class owns the ladder's own bookkeeping ({@code PaymentStatusCheck} rows, the jittered
+ * schedule) and calls into the shared settlement logic rather than duplicating it.
  */
 @Service
 public class PaymentReconciliationService {
@@ -59,8 +66,8 @@ public class PaymentReconciliationService {
     private final PaymentGatewayClient gatewayClient;
     private final PaymentCircuitBreaker circuitBreaker;
     private final InventoryReservationService reservationService;
-    private final LedgerService ledgerService;
-    private final ReversalService reversalService;
+    private final PaymentSettlementService settlementService;
+    private final PayloadRedactor payloadRedactor;
     private final PaymentStatusCheckProperties properties;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
@@ -72,8 +79,8 @@ public class PaymentReconciliationService {
                                         PaymentGatewayClient gatewayClient,
                                         PaymentCircuitBreaker circuitBreaker,
                                         InventoryReservationService reservationService,
-                                        LedgerService ledgerService,
-                                        ReversalService reversalService,
+                                        PaymentSettlementService settlementService,
+                                        PayloadRedactor payloadRedactor,
                                         PaymentStatusCheckProperties properties,
                                         TransactionTemplate transactionTemplate,
                                         Clock clock) {
@@ -83,8 +90,8 @@ public class PaymentReconciliationService {
         this.router = router;
         this.gatewayClient = gatewayClient;
         this.circuitBreaker = circuitBreaker;
-        this.ledgerService = ledgerService;
-        this.reversalService = reversalService;
+        this.settlementService = settlementService;
+        this.payloadRedactor = payloadRedactor;
         this.reservationService = reservationService;
         this.properties = properties;
         this.transactionTemplate = transactionTemplate;
@@ -161,7 +168,7 @@ public class PaymentReconciliationService {
             // Presumed failure takes precedence over the ladder: past the deadline, stop
             // asking and resolve, regardless of how many ladder attempts remain (7.6.2).
             if (payment.hasExceededDeadline(now, properties.autoReversalDeadline())) {
-                return resolveTerminal(payment, PaymentState.FAILED, BookingState.PAYMENT_FAILED, now,
+                return resolveTerminal(payment, now,
                         "auto-reversal deadline exceeded while PENDING; presuming failure", correlationId);
             }
 
@@ -181,20 +188,22 @@ public class PaymentReconciliationService {
 
     private Outcome pollGateway(Payment payment, Booking booking, int nextAttemptNo, Instant now, String correlationId) {
         GatewayCheckStatus checkStatus;
-        String summary;
+        String redactedPayload;
         try {
             PaymentGatewayProvider provider = router.routeByProviderCode(payment.getProviderCode());
-            GatewayOutcome outcome = circuitBreaker.execute(
+            PaymentResult result = circuitBreaker.execute(
                     () -> gatewayClient.callStatus(provider, payment.getProviderReference()));
-            checkStatus = switch (outcome) {
+            checkStatus = switch (result.outcome()) {
                 case SETTLED -> GatewayCheckStatus.SETTLED;
                 case FAILED -> GatewayCheckStatus.FAILED;
                 case PENDING -> GatewayCheckStatus.PENDING;
             };
-            summary = "gateway reported " + outcome;
+            // The raw provider payload carries synthetic PAN/CVV/contact-shaped fields
+            // (design doc 12.6.6); it must never reach this audit row unredacted.
+            redactedPayload = payloadRedactor.redact(result.providerPayload());
         } catch (GatewayTimeoutException | CircuitBreakerOpenException | GatewayUnavailableException e) {
             checkStatus = GatewayCheckStatus.ERROR;
-            summary = e.getClass().getSimpleName() + ": " + e.getMessage();
+            redactedPayload = e.getClass().getSimpleName() + ": " + e.getMessage();
         }
 
         Outcome result;
@@ -203,27 +212,12 @@ public class PaymentReconciliationService {
 
         switch (checkStatus) {
             case SETTLED -> {
-                // Money moved either way - the CHARGE is real regardless of what happens to
-                // the booking next, and must be recorded before any reversal of it (the
-                // ledger invariant would otherwise reject reversing a charge that was never
-                // written).
-                boolean stillHeld = !payment.isInventoryReleased();
-                payment.transitionTo(PaymentState.SETTLED);
-                payment.setNextAttemptAt(null);
-                ledgerService.recordCharge(payment, booking, correlationId);
-                if (stillHeld) {
-                    booking.transitionTo(BookingState.CONFIRMED);
-                } else {
-                    reversalService.reverse(payment, booking, ReversalReason.LATE_SUCCESS_ON_EXPIRED_BOOKING, correlationId);
-                }
+                settlementService.settle(payment, booking, correlationId);
                 loggedAttemptNo = nextAttemptNo;
                 result = Outcome.SETTLED;
             }
             case FAILED -> {
-                payment.transitionTo(PaymentState.FAILED);
-                payment.setNextAttemptAt(null);
-                booking.transitionTo(BookingState.PAYMENT_FAILED);
-                releaseIfHeld(payment, booking);
+                settlementService.fail(payment, booking);
                 loggedAttemptNo = nextAttemptNo;
                 result = Outcome.FAILED;
             }
@@ -255,20 +249,16 @@ public class PaymentReconciliationService {
                 .checkedAt(now)
                 .nextAttemptAt(nextAttemptAt)
                 .gatewayStatus(checkStatus)
-                .responseSummary(summary)
+                .responseSummary(redactedPayload)
                 .correlationId(correlationId)
                 .build());
 
         return result;
     }
 
-    private Outcome resolveTerminal(Payment payment, PaymentState paymentOutcome, BookingState bookingOutcome,
-                                    Instant now, String reason, String correlationId) {
+    private Outcome resolveTerminal(Payment payment, Instant now, String reason, String correlationId) {
         Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
-        payment.transitionTo(paymentOutcome);
-        payment.setNextAttemptAt(null);
-        booking.transitionTo(bookingOutcome);
-        releaseIfHeld(payment, booking);
+        settlementService.fail(payment, booking);
 
         statusCheckRepository.save(PaymentStatusCheck.builder()
                 .paymentId(payment.getId())
@@ -281,13 +271,6 @@ public class PaymentReconciliationService {
 
         log.warn("Payment {} resolved by deadline: {}", payment.getPaymentUid(), reason);
         return Outcome.FAILED;
-    }
-
-    private void releaseIfHeld(Payment payment, Booking booking) {
-        if (!payment.isInventoryReleased()) {
-            reservationService.release(booking.getRoomTypeId(), booking.nights(), booking.getUnits());
-            payment.setInventoryReleased(true);
-        }
     }
 
     /** Applies {@code payment.status-check.jitter-ratio} so many payments at the same attempt
@@ -312,20 +295,10 @@ public class PaymentReconciliationService {
             }
 
             Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
-            payment.transitionTo(request.outcome());
-
             if (request.outcome() == PaymentState.SETTLED) {
-                // Same ordering as the automated ladder: the charge is real and must be
-                // recorded before any reversal of it, regardless of which way this goes.
-                ledgerService.recordCharge(payment, booking, correlationId);
-                if (payment.isInventoryReleased()) {
-                    reversalService.reverse(payment, booking, ReversalReason.LATE_SUCCESS_ON_EXPIRED_BOOKING, correlationId);
-                } else {
-                    booking.transitionTo(BookingState.CONFIRMED);
-                }
+                settlementService.settle(payment, booking, correlationId);
             } else {
-                booking.transitionTo(BookingState.PAYMENT_FAILED);
-                releaseIfHeld(payment, booking);
+                settlementService.fail(payment, booking);
             }
             return PaymentResponse.from(payment, booking.getBookingUid());
         });

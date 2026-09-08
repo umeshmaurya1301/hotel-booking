@@ -1,4 +1,4 @@
-package com.umesh.hotelbooking.controller;
+package com.umesh.hotelbooking.controller.user;
 
 import com.umesh.hotelbooking.dto.ApiRequest;
 import com.umesh.hotelbooking.dto.PendingAware;
@@ -20,8 +20,10 @@ import java.util.List;
 /**
  * Test-only endpoints for exercising the API-layer plumbing (envelopes, correlation, role
  * checks) in isolation from real business services. Lives under {@code
- * com.umesh.hotelbooking.controller} deliberately, so the {@code basePackages}-scoped advices
- * apply to it exactly as they do to the real controllers.
+ * com.umesh.hotelbooking.controller.user} deliberately (moved here in Phase 7, when {@code
+ * ResponseEnvelopeAdvice}'s {@code basePackages} narrowed to exclude the bare {@code
+ * controller} package and {@code controller.webhook} — see that class's Javadoc), so the
+ * {@code basePackages}-scoped advices apply to it exactly as they do to the real controllers.
  */
 @RestController
 @RequestMapping("/api/v1/test")

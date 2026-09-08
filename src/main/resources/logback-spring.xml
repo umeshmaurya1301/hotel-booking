@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Owns the console log pattern (design doc 12.6.5, task spec §5.2). `application.yml` used to
+  carry `logging.pattern.console` directly; it moved here because the redaction backstop needs
+  a custom Logback conversion word (`msgRedacted`), and a pattern cannot reference a converter
+  registered anywhere but a logback config file. `logging.level.*` in application.yml still
+  works exactly as before — Spring Boot applies those independently of this file — only the
+  pattern itself moved, so there is exactly one place the pattern is defined, not two.
+
+  The correlation-id MDC field Phase 6 added — [%X{correlationId:-}] — is carried forward
+  unchanged. Dropping it here would silently undo a Phase 6 deliverable with nothing but a
+  human reading logs to notice.
+-->
+<configuration>
+
+    <conversionRule conversionWord="msgRedacted"
+                     converterClass="com.umesh.hotelbooking.security.LogRedactionConverter"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level [%X{correlationId:-}] %logger{36} - %msgRedacted%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+</configuration>

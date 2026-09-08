@@ -19,12 +19,22 @@ import java.time.Instant;
  * Wraps every plain DTO a {@code controller} method returns in an {@link ApiResponse} (design
  * doc 11.2), so controllers never hand-build the envelope themselves.
  *
- * <p>Scoped to {@code basePackages = "com.umesh.hotelbooking.controller"} rather than a
- * path-prefix check — this is what keeps {@code /actuator/health} and the H2 console
+ * <p>Scoped to {@code basePackages = {"...controller.admin", "...controller.user"}} rather
+ * than a path-prefix check — this is what keeps {@code /actuator/health} and the H2 console
  * (both enabled in {@code application.yml}) out of the envelope without special-casing their
  * paths here.
+ *
+ * <p>{@code controller.webhook} is deliberately excluded (Phase 7, task spec §11.1). A
+ * webhook body is a {@code WebhookEnvelope}, not an {@code ApiRequest}, so wrapping its
+ * response would produce {@code msgId: null} — structurally wrong, not just superfluous — and
+ * the provider on the other end has its own contract it did not agree to share with ours.
+ * Listing the two packages explicitly, rather than the parent {@code controller} package,
+ * also means a future {@code controller.webhook} class is never silently re-captured by
+ * widening this list back out.
  */
-@RestControllerAdvice(basePackages = "com.umesh.hotelbooking.controller")
+@RestControllerAdvice(basePackages = {
+        "com.umesh.hotelbooking.controller.admin",
+        "com.umesh.hotelbooking.controller.user"})
 public class ResponseEnvelopeAdvice implements ResponseBodyAdvice<Object> {
 
     private final ApiContext apiContext;

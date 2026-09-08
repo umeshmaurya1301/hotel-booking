@@ -1,5 +1,7 @@
 package com.umesh.hotelbooking.controller;
 
+import com.umesh.hotelbooking.controller.user.ProbeController;
+
 import com.umesh.hotelbooking.config.ApiProperties;
 import com.umesh.hotelbooking.controller.advice.GlobalExceptionHandler;
 import com.umesh.hotelbooking.controller.advice.RequestEnvelopeAdvice;

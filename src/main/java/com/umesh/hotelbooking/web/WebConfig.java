@@ -19,6 +19,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebConfig implements WebMvcConfigurer {
 
     private static final String API_PATTERN = "/api/v1/**";
+    private static final String WEBHOOK_PATTERN = "/api/v1/webhooks/**";
 
     private final ApiContext apiContext;
     private final ApiProperties apiProperties;
@@ -30,8 +31,18 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // apiType stays registered on the webhook path too — it is genuinely useful for audit
+        // there, which is the whole point of design doc 11.3.
         registry.addInterceptor(new ApiTypeInterceptor(apiContext)).addPathPatterns(API_PATTERN);
-        registry.addInterceptor(new RoleInterceptor(apiProperties)).addPathPatterns(API_PATTERN);
+        // Webhooks authenticate by HMAC signature, not the X-Role header (design doc 11.4's
+        // table says so directly) — and the interceptor's stubbed default is to let a
+        // *missing* header through, so without this exclusion a webhook call would pass by
+        // accident rather than by design. Excluding it explicitly is what keeps that stubbed
+        // default from silently covering for a path it was never meant to guard, and it is
+        // what stops a future tightening of the stub from breaking webhooks unexpectedly.
+        registry.addInterceptor(new RoleInterceptor(apiProperties))
+                .addPathPatterns(API_PATTERN)
+                .excludePathPatterns(WEBHOOK_PATTERN);
     }
 
     /**

@@ -3,6 +3,7 @@ package com.umesh.hotelbooking.service;
 import com.umesh.hotelbooking.config.BookingProperties;
 import com.umesh.hotelbooking.dto.BookingResponse;
 import com.umesh.hotelbooking.dto.CreateBookingRequest;
+import com.umesh.hotelbooking.dto.GuestDetails;
 import com.umesh.hotelbooking.entity.Booking;
 import com.umesh.hotelbooking.entity.BookingLineItem;
 import com.umesh.hotelbooking.entity.BookingState;
@@ -97,7 +98,7 @@ public class BookingCreator {
                 .orElseThrow(() -> new RoomTypeNotFoundException(request.roomTypeUid()));
         Property property = propertyRepository.findById(roomType.getProperty().getId())
                 .orElseThrow(() -> new PropertyNotFoundException("for room type " + request.roomTypeUid()));
-        Guest guest = resolveGuest(request.guestUid());
+        Guest guest = resolveGuest(request.guestUid(), request.guest());
 
         Instant now = clock.instant();
         Booking booking = Booking.builder()
@@ -170,12 +171,26 @@ public class BookingCreator {
 
     /**
      * A first-time booker does not need a separate registration step. The guest row holds an
-     * identifier and nothing else here — personal data belongs on the guest profile, never
-     * inlined into the booking (design doc 12.6.3).
+     * identifier and, when supplied, a profile — personal data belongs on the guest profile,
+     * never inlined into the booking itself (design doc 12.6.3).
+     *
+     * <p>When {@code guestUid} is supplied, any {@code details} on the request are ignored
+     * rather than applied as an update. A booking request is not a profile-update endpoint,
+     * and silently mutating an existing person's record from a booking payload — potentially
+     * submitted by whoever is paying, not the guest — is the kind of thing that turns into a
+     * data-integrity incident.
      */
-    private Guest resolveGuest(String guestUid) {
+    private Guest resolveGuest(String guestUid, GuestDetails details) {
         if (guestUid == null || guestUid.isBlank()) {
-            return guestRepository.save(Guest.builder().build());
+            Guest.GuestBuilder builder = Guest.builder();
+            if (details != null) {
+                builder.fullName(details.fullName())
+                        .email(details.email())
+                        .phone(details.phone())
+                        .address(details.address())
+                        .dateOfBirth(details.dateOfBirth());
+            }
+            return guestRepository.save(builder.build());
         }
         return guestRepository.findByGuestUid(guestUid)
                 .orElseThrow(() -> new GuestNotFoundException(guestUid));

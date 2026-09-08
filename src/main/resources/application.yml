@@ -2,6 +2,13 @@ spring:
   application:
     name: hotel-booking
 
+  threads:
+    virtual:
+      # Backs WebhookDispatcher's @Async outbound delivery (design doc 12.4) - backpressure,
+      # not thread conservation, is the justification, matching this project's existing
+      # @ConcurrencyLimit reasoning elsewhere.
+      enabled: true
+
   datasource:
     # LOCK_TIMEOUT: how long a statement waits for a row lock before giving up. The
     # reservation path deliberately contends on the same room-night row, so contenders must
@@ -108,6 +115,31 @@ api:
   correlation-header: X-Correlation-Id
   role-header: X-Role
 
+webhook:
+  inbound:
+    # +/- window on X-Timestamp before REPLAY_WINDOW_EXCEEDED (design doc 12.3 step 1).
+    replay-window: 5m
+  # Development placeholders only - see WebhookProperties' own Javadoc. In production these
+  # come from the environment or a secret manager, never from committed YAML (design doc
+  # 12.5 deliberately does not invent a key-management story beyond externalised config).
+  providers:
+    MOCK_CARD:
+      secret: "dev-secret-card"
+    MOCK_UPI:
+      secret: "dev-secret-upi"
+    MOCK_WALLET:
+      secret: "dev-secret-wallet"
+  outbound:
+    # No configured merchant URL by default, so there is nothing to call - a dispatcher that
+    # tried anyway would make every booking test slower and flakier for no reason.
+    enabled: false
+    url: ""
+    secret: "dev-secret-outbound"
+    retry:
+      max-attempts: 4
+      initial-delay: 200ms
+      max-delay: 5s
+
 management:
   endpoints:
     web:
@@ -115,7 +147,8 @@ management:
         include: health,info
 
 logging:
+  # The console pattern itself now lives in logback-spring.xml (design doc 12.6.5) — it needs
+  # a custom Logback converter for the redaction backstop, which only a logback config file
+  # can register. Two sources of truth for the same pattern is how one of them goes stale.
   level:
     com.umesh.hotelbooking: INFO
-  pattern:
-    console: "%d{HH:mm:ss.SSS} %-5level [%X{correlationId:-}] %logger{36} - %msg%n"

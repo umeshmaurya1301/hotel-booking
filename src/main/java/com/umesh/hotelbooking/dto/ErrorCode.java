@@ -55,6 +55,17 @@ public enum ErrorCode {
     PAYMENT_GATEWAY_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE),
     CIRCUIT_OPEN(HttpStatus.SERVICE_UNAVAILABLE),
 
+    // 401 — webhook signature verification (design doc 12.3); the one SYSTEM-category case
+    // where a non-2xx is deliberate — see WebhookExceptionHandler
+    SIGNATURE_INVALID(HttpStatus.UNAUTHORIZED),
+    REPLAY_WINDOW_EXCEEDED(HttpStatus.UNAUTHORIZED),
+
+    // 200 — deliberately not an error status. The code is for the log line and the
+    // webhook_event_log row; a genuine processing bug on our side must still ack 2xx, or a
+    // provider's aggressive retry policy amplifies our own failure into a retry storm
+    // (design doc 11.4)
+    WEBHOOK_PROCESSING_FAILED(HttpStatus.OK),
+
     // 500 — catch-all
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR);
 

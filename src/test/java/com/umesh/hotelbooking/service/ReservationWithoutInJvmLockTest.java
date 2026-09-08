@@ -71,7 +71,7 @@ class ReservationWithoutInJvmLockTest extends AbstractBookingConcurrencyTestSupp
                     start.await();
                     try {
                         bookingService.create(freshMeta(), new CreateBookingRequest(
-                                null, fixture.roomTypeUid(), night, night.plusDays(1), 1, 1, 0));
+                                null, fixture.roomTypeUid(), night, night.plusDays(1), 1, 1, 0, null));
                         successes.incrementAndGet();
                     } catch (InventoryUnavailableException e) {
                         unavailable.incrementAndGet();
