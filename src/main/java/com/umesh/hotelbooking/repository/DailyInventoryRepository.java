@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,6 +17,15 @@ public interface DailyInventoryRepository extends JpaRepository<DailyInventory, 
 
     /** {@code from} and {@code to} are both inclusive, matching JPA's BETWEEN semantics. */
     List<DailyInventory> findByRoomTypeIdAndStayDateBetween(Long roomTypeId, LocalDate from, LocalDate to);
+
+    /**
+     * The batched form {@code AvailabilityFilter} needs (design doc 10, task spec §5.2): one
+     * query for every surviving room type across every surviving search candidate, instead of
+     * one call to {@link #findByRoomTypeIdAndStayDateBetween} per room type — with 40
+     * candidate properties averaging 3 room types each, that difference is 120 queries against
+     * 1 for a single search. {@code from}/{@code to} are inclusive, matching the single-id form.
+     */
+    List<DailyInventory> findByRoomTypeIdInAndStayDateBetween(Collection<Long> roomTypeIds, LocalDate from, LocalDate to);
 
     /**
      * The last night already materialised for a room type — the starting point for rolling

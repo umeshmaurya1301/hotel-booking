@@ -1309,7 +1309,13 @@ GuestRedactionService with the ledger-integrity test 12.6.3 calls for, HMAC sign
 verification with constant-time comparison, webhook_event_log with the same persist-before-
 process discipline the idempotency table established, idempotency layer (c) on
 (provider_code, event_id) plus the FSM-level no-op guard a unique constraint alone cannot
-provide, and disabled-by-default signed outbound delivery (see 16.6). What is not: search (8).
+provide, and disabled-by-default signed outbound delivery (see 16.6); and, as of Phase 8,
+search and discovery (8) in full — the SearchCandidate/RoomTypeCandidate mutable-candidate
+architecture resolving design doc 10.1's unimplementable literal filter signature, the seven
+SearchFilter/BatchSearchFilter beans run in order() sequence by SearchFilterChain, the
+two-query-per-collection fix for PropertyRepository's fetch-join duplication bug (see 16.7),
+and the advisory, non-locking, cap-not-paginate search endpoint at
+POST /api/v1/user/properties/search. What is not: only Phase 9's documentation and polish.
 Two structural notes on what phase 2 added beyond the tree in 2.3: controllers are grouped
 by caller (controller.admin, controller.user, controller.webhook, controller.advice) as
 11.4 requires, and a minimal GlobalExceptionHandler mapping error codes to HTTP status was
@@ -1676,6 +1682,81 @@ Nothing found here looks wrong for Phase 8 or 9. The one thing worth flagging fo
 inventory views already do; nothing in this phase touches that path, so there is no known
 interaction, but it is the next place a similarly quiet transaction-boundary assumption could
 hide.
+
+16.7 Phase 8 findings
+The headline finding is that design doc 10.1's own SearchFilter signature — matches(Property,
+SearchCriteria) — is not implementable as written, and this was known going in rather than
+discovered mid-phase: a boolean per (Property, SearchCriteria) pair cannot express three of the
+seven required filters. GuestCapacityFilter must drop individual room types, not the whole
+property, when a room type is too small but a sibling room type on the same property is not.
+AvailabilityFilter and PriceRangeFilter both need per-room-type, per-stay-total state that
+outlives the filter that computed it and must be visible to a later filter in the chain — a
+pure predicate has nowhere to put that. The resolution is the mutable SearchCandidate /
+RoomTypeCandidate pair this phase built: a candidate that owns a prunable list of surviving
+room types, plus two fields (stayTotal, availableUnits) that AvailabilityFilter populates and
+PriceRangeFilter later reads. SearchFilterChain still runs a plain List<SearchFilter> in order
+and still adds a new filter with zero changes elsewhere (design doc 10.1's actual goal) — only
+the shape of what a filter receives and may mutate changed, not the chain's own logic.
+BatchSearchFilter exists for exactly one reason: AvailabilityFilter is the one filter that must
+hit the database, and doing that one candidate at a time is the textbook N+1 this phase was
+told explicitly not to reintroduce (design doc 10.2). Extending SearchFilter with an
+applyBatch(List<SearchCandidate>, SearchCriteria) method lets that filter see every surviving
+candidate at once — one findByRoomTypeIdInAndStayDateBetween call across all of them — while
+every other filter stays a plain per-candidate predicate and never needs to know batching
+exists. SearchFilterChain treats the two uniformly (instanceof BatchSearchFilter, same
+empty-after-every-filter pruning either way), so the escape hatch cost the chain nothing.
+PriceRangeFilter reading AvailabilityFilter's output (candidate's stayTotal, set by whichever
+filter ran immediately before it) is a real, load-bearing ordering dependency, not an
+implementation detail — moving PriceRangeFilter earlier than AvailabilityFilter silently
+breaks it (every stayTotal reads null, so PriceRangeFilter's null-is-non-matching rule would
+empty every candidate). This is exactly why order() is 80 for PriceRangeFilter and 70 for
+AvailabilityFilter rather than the 60 an ungrounded reading of the filter table might suggest,
+and it is called out in both filters' own Javadoc, not left for a future reader to infer from
+the numbers alone.
+SearchQueryCountTest measures three prepared statements per search, not the two ("one property
+fetch plus one inventory fetch") this phase's own task spec assumed going in. The third query
+exists because of a genuine bug this phase found and fixed in PropertyRepository: fetch-joining
+two collections (roomTypes, amenities) on one root in a single query is a SQL cartesian
+product, and in this Hibernate version select distinct on that query did not collapse the
+duplication back out — a property with 2 room types and 2 amenities came back with each room
+type listed twice, silently, no exception thrown. That was caught by
+PropertySearchServiceTest asserting on the actual room-type list content, not by anything
+counting queries, which is exactly why an assertion on data shape and not just query success is
+what caught it. The task spec's own warning here (two List-typed collections throw
+MultipleBagFetchException) is real but incomplete: amenities is a Set, not a List, so no
+exception was ever thrown, and the corruption would have shipped silently without that specific
+assertion. The fix — one fetch-join query per collection, both against the same persistence
+context, so the second query's results merge onto the already-managed entities from the first —
+is the standard answer to "eagerly load two to-many collections", and it costs one extra query
+per search, constant regardless of candidate count. SearchQueryCountTest was written and its
+threshold chosen against this corrected, three-query reality rather than forcing the original
+two-query assumption; it asserts "well under one query per candidate" (fewer than 6, for a
+6-candidate fixture) rather than pinning the literal 3, so a future incidental query that is
+still O(1) does not make the test flaky over nothing.
+Section 5.4's property-local-date handling (LocalDate.now(clock.withZone(property.zone())),
+never the server's zone) turned up nothing the booking path's equivalent handling had not
+already established — SearchPropertyLocalDateTest is close to a restatement of the booking
+path's own zone test, built the same way (MutableClock, two properties in different IANA
+zones, one instant that is different calendar days in each). The one difference worth noting:
+AvailabilityFilter checks a property-local "does this stay start before today" rule per
+candidate inside a batch operation, rather than at the single-property granularity the booking
+path checks it at, so the same correctness rule had to be re-proven at a different call shape,
+not assumed to transfer automatically from a passing booking-path test.
+One acceptance-criterion grep is worth a note rather than a silent pass: grep -rn
+"AvailabilityFilter\|PriceRangeFilter\|CityFilter" SearchFilterChain.java returns a hit, but
+it is a Javadoc line ({@code CityFilter}, {@code StarRatingFilter}, ...) explaining the
+ordering rationale in prose, not an import, field, or any other real reference — the class has
+zero compiled dependency on any concrete filter, working only through List<SearchFilter> and
+instanceof BatchSearchFilter. The criterion's actual intent (the chain must not hardcode
+knowledge of specific filters) holds; a literal grep is just not precise enough to distinguish
+prose from code here, and this note exists so that fact is not merely inferred by whoever reads
+that grep result next.
+Nothing found in this phase is believed wrong for Phase 9. The one thing worth flagging
+forward, mirroring 16.6's own forward note: Phase 9 is documentation and polish, not new
+persistence code, but if any later phase does add a second multi-collection eager fetch
+anywhere in the codebase, PropertyRepository's Javadoc is the place that already explains why
+the obvious one-query version silently corrupts data in this Hibernate version, and is worth
+reading before repeating the mistake rather than re-discovering it the same way.
 
 17. Implementation Plan
 Phase 1 — Entity core (highest rubric weight; revised mid-course, see 0.1)

@@ -107,6 +107,11 @@ pricing:
       to: 2026-11-12
       multiplier: 1.40
 
+search:
+  # An unbounded search over a large city is a denial-of-service the client did not intend.
+  # No cursor paging: it is a real gap, stated rather than hidden - see design doc 10.3 / README.
+  max-results: 50
+
 api:
   # Contract version the server implements. Echoed in logs and compared against the
   # envelope's `version` for observability only - a mismatch is recorded, never rejected.

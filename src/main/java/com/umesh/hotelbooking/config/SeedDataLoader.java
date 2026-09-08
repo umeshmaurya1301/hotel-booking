@@ -4,7 +4,12 @@ import com.umesh.hotelbooking.dto.OnboardPropertyRequest;
 import com.umesh.hotelbooking.dto.PropertyResponse;
 import com.umesh.hotelbooking.dto.RoomTypeRequest;
 import com.umesh.hotelbooking.entity.Amenity;
+import com.umesh.hotelbooking.entity.DailyInventory;
+import com.umesh.hotelbooking.entity.Property;
+import com.umesh.hotelbooking.entity.RoomType;
+import com.umesh.hotelbooking.repository.DailyInventoryRepository;
 import com.umesh.hotelbooking.repository.PropertyRepository;
+import com.umesh.hotelbooking.repository.RoomTypeRepository;
 import com.umesh.hotelbooking.service.PropertyOnboardingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +19,8 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 
@@ -40,10 +47,18 @@ public class SeedDataLoader implements ApplicationRunner {
 
     private final PropertyOnboardingService onboardingService;
     private final PropertyRepository propertyRepository;
+    private final RoomTypeRepository roomTypeRepository;
+    private final DailyInventoryRepository dailyInventoryRepository;
+    private final Clock clock;
 
-    public SeedDataLoader(PropertyOnboardingService onboardingService, PropertyRepository propertyRepository) {
+    public SeedDataLoader(PropertyOnboardingService onboardingService, PropertyRepository propertyRepository,
+                          RoomTypeRepository roomTypeRepository, DailyInventoryRepository dailyInventoryRepository,
+                          Clock clock) {
         this.onboardingService = onboardingService;
         this.propertyRepository = propertyRepository;
+        this.roomTypeRepository = roomTypeRepository;
+        this.dailyInventoryRepository = dailyInventoryRepository;
+        this.clock = clock;
     }
 
     @Override
@@ -103,7 +118,7 @@ public class SeedDataLoader implements ApplicationRunner {
                 Set.of(Amenity.WIFI, Amenity.PARKING, Amenity.AIR_CONDITIONING),
                 List.of(roomType("Standard Room", 20, 2, "2600.00"))));
 
-        onboardingService.onboard(independent(
+        PropertyResponse anjuna = onboardingService.onboard(independent(
                 "Anjuna Beach Resort", "Goa", "Anjuna", 4,
                 Set.of(Amenity.WIFI, Amenity.POOL, Amenity.BAR, Amenity.RESTAURANT,
                         Amenity.PET_FRIENDLY, Amenity.BREAKFAST_INCLUDED),
@@ -127,7 +142,42 @@ public class SeedDataLoader implements ApplicationRunner {
                 Set.of(Amenity.WIFI, Amenity.PARKING, Amenity.AIR_CONDITIONING, Amenity.ROOM_SERVICE),
                 List.of(roomType("Standard Room", 22, 2, "2900.00"))));
 
+        fullyBookOneNight(anjuna, "Beachfront Villa");
+
         log.info("Seed data loaded: {} properties", propertyRepository.count());
+    }
+
+    /**
+     * Task spec §10: a property whose only sufficiently-large room type is fully booked on
+     * one night of a plausible range — the search all-or-nothing rule (design doc 10.1: one
+     * insufficient night excludes the whole stay) demonstrable from a curl, not only a test.
+     *
+     * <p>Anjuna Beach Resort's Garden Cottage sleeps 2, too small for a family of five or six;
+     * its Beachfront Villa (4 units, sleeps 6) is the only room type such a party could book at
+     * all. Fully booking it on the property's second materialised night means a search for 6
+     * guests covering that night returns nothing for this property, while the same search one
+     * night earlier or later still finds it.
+     *
+     * <p>Not {@code @Transactional}: this class is called once, single-threaded, at startup,
+     * and a self-invoked {@code @Transactional} on a method in the same class would be
+     * silently ignored by Spring's proxy anyway (the usual AOP self-invocation trap) — better
+     * to not claim atomicity this does not actually have than to carry an annotation that does
+     * nothing. The explicit {@code save} after mutating is what makes the change durable
+     * regardless.
+     */
+    void fullyBookOneNight(PropertyResponse property, String roomTypeName) {
+        Property entity = propertyRepository.findByPropertyUid(property.propertyUid()).orElseThrow();
+        RoomType roomType = roomTypeRepository.findByPropertyId(entity.getId()).stream()
+                .filter(rt -> rt.getName().equals(roomTypeName))
+                .findFirst().orElseThrow();
+
+        LocalDate propertyToday = LocalDate.now(clock.withZone(entity.zone()));
+        LocalDate targetNight = propertyToday.plusDays(1);
+
+        DailyInventory row = dailyInventoryRepository
+                .findByRoomTypeIdAndStayDate(roomType.getId(), targetNight).orElseThrow();
+        row.setBookedUnits(row.getTotalUnits());
+        dailyInventoryRepository.save(row);
     }
 
     private OnboardPropertyRequest chainProperty(String name, String city, String locality, int stars,
