@@ -1271,18 +1271,34 @@ Not in the rubric. Added last, only if tests and README are complete.
 
 
 16.1 Where the build has actually reached
-Phases 0 through 3 are built and tested; phases 4 onward are designed here but not yet
-written. What exists today: the scaffold and entity core (0/1, as revised in 0.1);
-onboarding, inventory materialisation and pricing (2) — the ownership hierarchy including
-the group-of-one rule, per-night DailyInventory rows with the check constraints of 5.2.4
-layer 3 enforced by the database, three pricing strategies behind a registry, the eager
-bounded-horizon materialiser, admin endpoints for onboarding/extend/reprice/rate-override,
-and a demo seed profile; and booking, reservation and locking (3) — the atomic conditional
-UPDATE of 5.2.1, total night ordering per 5.3, all-or-nothing multi-night reservation,
-multi-unit reservation, per-night price snapshots on line items, the optional in-JVM lock
-of 5.2.4 layer 1, and the BookingSweeper of 4.4 for hold expiry and CONFIRMED → COMPLETED.
-What is not: payments and resilience (4), refunds/reversals/ledger (5), the
-request/response envelope (6), webhooks and the data protection layer (7), and search (8).
+Phases 0 through 4 are built; phases 5 onward are designed here but not yet written. What
+exists today: the scaffold and entity core (0/1, as revised in 0.1); onboarding, inventory
+materialisation and pricing (2) — the ownership hierarchy including the group-of-one rule,
+per-night DailyInventory rows with the check constraints of 5.2.4 layer 3 enforced by the
+database, three pricing strategies behind a registry, the eager bounded-horizon materialiser,
+admin endpoints for onboarding/extend/reprice/rate-override, and a demo seed profile; booking,
+reservation and locking (3) — the atomic conditional UPDATE of 5.2.1, total night ordering per
+5.3, all-or-nothing multi-night reservation, multi-unit reservation, per-night price snapshots
+on line items, the optional in-JVM lock of 5.2.4 layer 1, and the BookingSweeper of 4.4 for
+hold expiry and CONFIRMED → COMPLETED; and payment, SPI and resilience (4) — the
+PaymentGatewayProvider SPI with three mock providers and a router (6), a hand-written circuit
+breaker standing in for Resilience4j (7.1, see 16.2), timeout and idempotency-gated retry via
+Spring's native @Retryable (7.3/7.4), per-provider @ConcurrencyLimit as the bulkhead (7.5), the
+full stuck-transaction resolution of 7.6 — the status-check ladder, payment_status_check
+records, the inventory-hold-window release on its own clock, the auto-reversal deadline, and
+MANUAL_REVIEW with its admin resolution endpoint — and idempotency layer (a), client → API,
+via msgId and an idempotency_records table (8a). What is not: refunds/reversals/ledger
+bookkeeping (5) — the state transitions this phase's reconciliation loop makes (CONFIRMED vs
+REVERSED, PAYMENT_FAILED) are correct, but no LedgerEntry row is written yet, and the
+gateway's own refund/reverse methods still throw UnsupportedOperationException; the
+request/response envelope (6); webhooks, HMAC and the data protection layer (7) — idempotency
+layer (c) waits on the inbound webhook this introduces; and search (8).
+Two structural notes on what phase 2 added beyond the tree in 2.3: controllers are grouped
+by caller (controller.admin, controller.user, controller.webhook, controller.advice) as
+11.4 requires, and a minimal GlobalExceptionHandler mapping error codes to HTTP status was
+pulled forward from phase 6 — without it every domain exception surfaces as a 500, which
+would make the phase-2 endpoints look broken rather than scoped. The envelope itself is
+still phase 6, and adopting it will not change any controller (11.2).
 Two structural notes on what phase 2 added beyond the tree in 2.3: controllers are grouped
 by caller (controller.admin, controller.user, controller.webhook, controller.advice) as
 11.4 requires, and a minimal GlobalExceptionHandler mapping error codes to HTTP status was
@@ -1306,6 +1322,44 @@ it, or every attempt after the first runs in a transaction that is already marke
 rollback-only. That is why booking creation is split across two beans — BookingService
 carries @Retryable and BookingCreator carries @Transactional. Annotating one method with
 both would leave the nesting to advisor ordering.
+
+16.3 Phase 4 findings
+The @Retryable / @ConcurrencyLimit plan from 16.2 held up: both are used as anticipated
+(PaymentGatewayClient for gateway initiate/status, each mock provider's initiate/status for
+per-provider bulkhead) with no surprises. The hand-written PaymentCircuitBreaker mirrors
+Resilience4j's own COUNT_BASED/failure-rate/HALF_OPEN model deliberately, so swapping in the
+real library later — if resilience4j-spring-boot4 ever ships — is a drop-in change against
+the same CircuitBreakerProperties. Verified by hand against a running instance: the breaker
+opens after crossing its failure-rate threshold, fast-fails (sub-40ms) while OPEN, and closes
+again after a successful HALF_OPEN trial.
+Two more platform-version findings, in the same spirit as 16.2:
+Spring Boot 4.1 ships Jackson 3, which relocated every package from com.fasterxml.jackson.*
+to tools.jackson.* — ObjectMapper is now tools.jackson.databind.ObjectMapper — and made
+JacksonException (the new common base, replacing JsonProcessingException) an unchecked
+RuntimeException. Code written against Jackson 2 idioms (importing com.fasterxml.jackson.
+databind.ObjectMapper, catching JsonProcessingException) fails to compile, not merely to
+resolve a dependency; every online example still assumes Jackson 2.
+Spring Framework 7 renamed HttpStatus.UNPROCESSABLE_ENTITY to UNPROCESSABLE_CONTENT (the
+RFC 9110 wording for 422), keeping the old constant only as deprecated. -Werror catches this
+immediately; a codebase without it would carry a silent deprecation warning.
+The stuck-transaction resolution of 7.6.6 is built exactly to its stated scope: the ladder as
+config, payment_status_check records, the inventory-hold-window release on its own clock
+(decoupled from both the ladder and the auto-reversal deadline, per 7.6.2), MANUAL_REVIEW
+with its admin resolution endpoint, and the SETTLED/FAILED/PENDING/ERROR branches of the
+resolution loop exactly as pseudocoded in 7.6.4 — including ERROR not consuming the ladder's
+attempt budget. One scope line honestly drawn: 7.6.4's "any later settlement reverses
+automatically" after the auto-reversal deadline is not built as a standing arm-then-reverse
+mechanism — a payment that hits the deadline resolves straight to PAYMENT_FAILED (with
+inventory released if not already), which is the deadline's terminal answer, not a promise to
+keep watching. Building the watch-and-reverse-later machinery on top would be exactly the kind
+of workflow-engine scope creep 7.6.6 already rules out.
+What ships as a real capability gap, not a corner cut: the reconciliation loop's SETTLED
+branch correctly decides CONFIRMED vs REVERSED (by checking whether this payment's inventory
+was already released), and the admin MANUAL_REVIEW resolution endpoint makes the same
+decision — both verified against a running instance, including the late-settlement-after-
+release case landing on REVERSED. But neither writes a LedgerEntry, and PaymentGatewayProvider
+.refund/.reverse still throw UnsupportedOperationException. The booking-level story is
+complete; the money-movement bookkeeping is Phase 5's job, not simulated here.
 
 17. Implementation Plan
 Phase 1 — Entity core (highest rubric weight; revised mid-course, see 0.1)

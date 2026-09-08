@@ -54,6 +54,36 @@ booking:
     initial-delay: 25ms
     max-delay: 250ms
 
+payment:
+  gateway:
+    # Below the breaker's evaluation expectations (design doc 7.3): without a timeout, a
+    # hanging call never returns, the breaker never records a failure, and threads pile up.
+    call-timeout: 2s
+    bulkhead-limit: 5
+    retry:
+      max-attempts: 2
+      initial-delay: 50ms
+      max-delay: 300ms
+  circuit-breaker:
+    # One breaker, wrapping only the payment gateway call - the only unreliable remote
+    # dependency (7.1). Not per-provider: bulkhead isolates providers from each other,
+    # the breaker protects "the payment gateway" as a class of dependency.
+    sliding-window-size: 10
+    failure-rate-threshold: 50
+    wait-duration-in-open-state: 5s
+    permitted-calls-in-half-open-state: 3
+  status-check:
+    # Bounded, escalating - not a fixed-interval poll (7.6.2). Configuration, not hardcoded.
+    intervals: [30s, 1m, 2m, 5m, 7m, 15m, 30m, 1h]
+    jitter-ratio: 0.2
+    inventory-hold-window: 15m
+    auto-reversal-deadline: 2h
+  idempotency:
+    retention: 24h
+  reconciliation:
+    enabled: true
+    fixed-delay: 15s
+
 pricing:
   weekend:
     multiplier: 1.25

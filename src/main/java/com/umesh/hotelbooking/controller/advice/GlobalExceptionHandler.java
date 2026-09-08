@@ -32,11 +32,17 @@ public class GlobalExceptionHandler {
             "ROOM_TYPE_NOT_FOUND",
             "OWNER_NOT_FOUND",
             "BOOKING_NOT_FOUND",
+            "GUEST_NOT_FOUND",
+            "PAYMENT_NOT_FOUND",
             "INVENTORY_NOT_MATERIALISED");
 
     private static final Set<String> CONFLICT_CODES = Set.of(
             "INVENTORY_UNAVAILABLE",
-            "INVALID_STATE_TRANSITION");
+            "INVALID_STATE_TRANSITION",
+            "REQUEST_IN_PROGRESS");
+
+    /** design doc 8a: same msgId, different body — a client bug, distinct from a plain 400. */
+    private static final Set<String> UNPROCESSABLE_CODES = Set.of("MSG_ID_PAYLOAD_MISMATCH");
 
     @ExceptionHandler(DomainException.class)
     public ResponseEntity<ApiError> handleDomain(DomainException exception) {
@@ -60,6 +66,9 @@ public class GlobalExceptionHandler {
         }
         if (CONFLICT_CODES.contains(errorCode)) {
             return HttpStatus.CONFLICT;
+        }
+        if (UNPROCESSABLE_CODES.contains(errorCode)) {
+            return HttpStatus.UNPROCESSABLE_CONTENT; // RFC 9110 rename of 422 Unprocessable Entity
         }
         return HttpStatus.BAD_REQUEST;
     }
