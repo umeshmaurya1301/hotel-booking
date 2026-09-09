@@ -43,7 +43,7 @@ public class BookingController {
      * {@code @ResponseStatus} rather than building a {@code ResponseEntity}: both produce the
      * same 201, but only the annotation is visible to anything reading the method's metadata —
      * a status set inside the body was documented by springdoc as a plain 200 until Phase 10
-     * changed this (see PROJECT_STRUCTURE.txt.txt 16.9). Returning the plain DTO also matches
+     * changed this (see DESIGN.md 16.9). Returning the plain DTO also matches
      * every other controller in this codebase and design doc 11.2's own rule that controllers
      * hand back payloads and let {@code ResponseEnvelopeAdvice} do the wrapping.
      */

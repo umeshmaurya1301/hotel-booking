@@ -190,7 +190,7 @@ public class PaymentService {
         // createdAt/updatedAt are set explicitly from the injected Clock, matching
         // BookingCreator's own Booking.builder() call - Payment's @PrePersist Instant.now()
         // is a bare fallback for a caller that forgets, not the intended source of truth (see
-        // PROJECT_STRUCTURE.txt.txt 16.8: this attempt previously fell through to that
+        // DESIGN.md 16.8: this attempt previously fell through to that
         // fallback on every attempt, silently using wall-clock time instead of the Clock bean
         // even under a MutableClock-driven test).
         Instant now = Instant.now(clock);

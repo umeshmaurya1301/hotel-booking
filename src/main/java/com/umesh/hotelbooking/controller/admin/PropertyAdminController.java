@@ -41,7 +41,7 @@ public class PropertyAdminController {
     /** {@code @ResponseStatus} rather than a {@code ResponseEntity} for the same reason
      * {@code BookingController.create} uses it — the status is otherwise invisible to anything
      * reading the method's metadata, and was documented as a plain 200 by springdoc until
-     * Phase 10 (see PROJECT_STRUCTURE.txt.txt 16.9). */
+     * Phase 10 (see DESIGN.md 16.9). */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Api(ApiType.ONBOARD_PROPERTY)

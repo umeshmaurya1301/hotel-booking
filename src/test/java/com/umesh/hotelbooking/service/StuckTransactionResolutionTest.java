@@ -62,7 +62,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * SETTLED answer arriving at a normal, in-ladder poll <em>after</em> the 15-minute
  * inventory-hold-window release but comfortably <em>before</em> the deadline — which is what
  * "late settlement after an expired hold" (design doc 16.3/16.4's own phrase) actually names.
- * See PROJECT_STRUCTURE.txt.txt 16.8 for the full account, including why the shipped
+ * See DESIGN.md 16.8 for the full account, including why the shipped
  * {@code auto-reversal-deadline} needed to change for scenario (b) to be reachable at all.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)

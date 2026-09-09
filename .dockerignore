@@ -10,6 +10,4 @@ bin/
 out/
 
 # Not needed to build or run the application.
-README.md
-PROJECT_STRUCTURE.txt.txt
 *.md

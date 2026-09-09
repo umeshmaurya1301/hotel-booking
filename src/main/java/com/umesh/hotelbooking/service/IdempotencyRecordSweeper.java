@@ -15,7 +15,7 @@ import java.time.Instant;
  * {@link IdempotencyRecordStore} previously exposed only a finder for this — sat unused
  * since Phase 4, since nothing ever called it — and unbounded growth on a dedupe table is
  * exactly the "real production problem" that record's own retention field was always meant to
- * guard against (see PROJECT_STRUCTURE.txt.txt 16.8). That dead finder is gone, replaced by
+ * guard against (see DESIGN.md 16.8). That dead finder is gone, replaced by
  * {@link IdempotencyRecordStore#deleteByCreatedAtBefore}, a genuine bulk delete.
  *
  * <p>Separate from {@link IdempotencyRecordSweeperScheduler}, matching {@code BookingSweeper}

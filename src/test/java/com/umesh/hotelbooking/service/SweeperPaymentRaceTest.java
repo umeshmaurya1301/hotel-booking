@@ -138,7 +138,7 @@ class SweeperPaymentRaceTest extends AbstractBookingConcurrencyTestSupport {
                     // reach a doomed flush. A second, equally legitimate way to lose this race
                     // - and the one that only appears when the sweeper wins by a wide enough
                     // margin, which is why it took a heavily loaded machine to surface it (see
-                    // PROJECT_STRUCTURE.txt.txt 16.9).
+                    // DESIGN.md 16.9).
                     paymentException.set(e);
                 } catch (Exception e) {
                     synchronized (unexpected) {

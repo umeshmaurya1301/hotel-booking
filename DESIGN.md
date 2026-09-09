@@ -2,17 +2,9 @@ Hotel Booking Platform — Design Document
 Rupeek SDE-3 Machine Coding Round · Question A Author: Umesh Maurya Stack: Java 21 · Spring Boot 4.1.x · H2 (MySQL compatibility mode) · Gradle
 
 0. Reading Guide
-This document is the design record for the submission. It is deliberately explicit about what is built, what is not built, and why — because at this level the decision not to build something is as much a signal as the code itself.
-The README opens with the trade-offs, not with setup instructions. The first section a reviewer reads states that this is a modular monolith rather than microservices and why, where the design goes deliberately deep (the payment-ambiguity path), and what was consciously left out. Depth encountered after that framing reads as judgment; the same depth encountered cold reads as poor scoping. The ordering is a deliberate choice, not a formatting detail.
-Two artifacts come out of this exercise:
-Artifact
-Purpose
-Submission repo
-Modular monolith. Right-sized to the brief. Maximises rubric score.
-Practice repo (separate)
-Microservices, gRPC, Kafka/Avro/DLQ, Redis, MySQL partitioning, real load testing. Built for learning, not for review.
-
-Everything in Section 16 lives in the practice repo, not here.
+This document is the design record for the project. It is deliberately explicit about what is built, what is not built, and why — the decision not to build something is as much a part of the design as the code itself.
+This is a modular monolith, not a set of microservices. It goes deliberately deep in one place (the payment-ambiguity path, Section 7) and stays shallow elsewhere; Section 16 records what was consciously left out, along with how each item would be approached if it were in scope.
+The numbered sections here are what the code comments cite: a comment reading "design doc 5.2.4" points at Section 5.2.4 below.
 
 0.1 A mid-course revision — entities replace the domain/entity split
 Sections 2 and 3 below originally described a hexagonal design: a framework-free domain model (plain classes, typed value-object ids, repository port interfaces) kept deliberately separate from JPA persistence entities, connected by an explicit mapper. That was built for Phase 1 and then deliberately reworked, on explicit direction, into a single conventional entity layer before Phase 2 began. This document has been updated in place to describe the current (post-revision) design rather than keeping the superseded one as a historical artifact — a design record that documents an approach no longer in the code would mislead a reviewer more than it would inform one.
@@ -508,7 +500,7 @@ Honest framing: this is a provider-registry / SPI-style plugin architecture, not
 6.3 Adding a new provider
 Implement PaymentGatewayProvider.
 Annotate @Component.
-No changes to router, service, controller or configuration. This is the extensibility claim the rubric asks for, and it is verifiable by inspection.
+No changes to router, service, controller or configuration. This is the extensibility claim the brief asks for, and it is verifiable by inspection.
 6.4 Multi-property settlement — why routing exists
 Property groups can be configured with different settlement providers (BankCode). This gives provider routing a genuine domain justification rather than being decoration: chain A settles through one gateway, chain B through another. Without this, "why does each booking need a different gateway?" has no good answer.
 
@@ -1267,7 +1259,7 @@ The single-statement compare-and-set of 5.2.1 is already the primary mitigation 
 Auth / authz
 Out of scope per brief. Role separation is structural (Section 11.4); enforcement stubbed.
 Docker
-Not in the rubric. Added last, only if tests and README are complete.
+Not required by the brief. Added last, only if tests and README are complete.
 
 
 16.1 Where the build has actually reached
@@ -1966,7 +1958,7 @@ last of the planned phases; 17.1's "never cut" list is intact, and the three opt
 this phase covers were the only outstanding items in 16.1.
 
 17. Implementation Plan
-Phase 1 — Entity core (highest rubric weight; revised mid-course, see 0.1)
+Phase 1 — Entity core (revised mid-course, see 0.1)
 Built initially as a framework-free domain model (value objects, typed ids, repository ports) per the original plan below, then reworked into the current shape: JPA entities directly (Booking + BookingLineItem per 3.4, plus placeholder aggregates for Property/RoomType/DailyInventory/Guest/Payment/LedgerEntry sufficient to give each Spring Data repository a concrete target), BookingState + BookingStateMachine as a static transition-table utility, the exception hierarchy, and one JpaRepository interface per aggregate. Unit tests for the FSM (full state-pair cartesian product), Booking's date-range validation, and Bean Validation constraints — plus, since persistence is no longer a separate later concern, a @DataJpaTest proving identity-generated ids, auto-assigned business uids and the uid uniqueness constraint actually work against embedded H2.
 Phase 2 — Onboarding, inventory and pricing
 Ownership hierarchy, PropertyOnboardingService, InventoryMaterializer, PricingStrategy implementations writing price_per_unit (4.2.1), reprice and rate-override admin endpoints, H2 schema with all constraints and indexes, seed fixture.

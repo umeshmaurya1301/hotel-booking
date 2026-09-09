@@ -87,7 +87,7 @@ payment:
     # or too close to that cumulative time makes MANUAL_REVIEW-via-exhaustion unreachable in
     # practice - every stuck payment would be presumed FAILED moments before the final rung
     # could fire. Found by Phase 9's StuckTransactionResolutionTest with the previous value
-    # (2h, which is ~30s short) never reaching MANUAL_REVIEW; see PROJECT_STRUCTURE.txt.txt
+    # (2h, which is ~30s short) never reaching MANUAL_REVIEW; see DESIGN.md
     # 16.8 for the full account.
     auto-reversal-deadline: 210m
   idempotency:
