@@ -365,23 +365,13 @@ The check-then-act problem does not arise, because there is no separate check. T
 
 #### 5.2.2 Why this over read → pessimistic lock → write
 
-Atomic conditional UPDATE (chosen)
-SELECT ... FOR UPDATE then write
-Round trips per night
-1
-2
-Lock hold duration
-Statement duration
-Read → decide → write, all under lock
-Read-then-write window
-None
-Exists; correctness depends on the lock covering it
-Version column needed
-No
-No (but often added anyway, then unused)
-Failure signal
-rowsAffected = 0
-Application comparison
+|  | Atomic conditional UPDATE (chosen) | SELECT ... FOR UPDATE then write |
+| --- | --- | --- |
+| Round trips per night | 1 | 2 |
+| Lock hold duration | Statement duration | Read → decide → write, all under lock |
+| Read-then-write window | None | Exists; correctness depends on the lock covering it |
+| Version column needed | No | No (but often added anyway, then unused) |
+| Failure signal | rowsAffected = 0 | Application comparison |
 
 Fewer moving parts, shorter locks, and the invariant is expressed in the same statement that could violate it.
 
@@ -925,25 +915,12 @@ USER    /api/v1/user/**        guests
 SYSTEM  /api/v1/webhooks/**    machine-to-machine
 ```
 
-ADMIN
-USER
-SYSTEM (webhook)
-Caller
-Operator
-Guest
-Payment provider
-Auth model
-Role-based (stubbed)
-Session (stubbed)
-HMAC signature
-Error semantics
-Normal REST
-Normal REST
-Return 2xx fast, process async — non-2xx triggers aggressive provider retries
-Rate expectations
-Low
-Moderate
-Bursty, retry-heavy
+|  | ADMIN | USER | SYSTEM (webhook) |
+| --- | --- | --- | --- |
+| Caller | Operator | Guest | Payment provider |
+| Auth model | Role-based (stubbed) | Session (stubbed) | HMAC signature |
+| Error semantics | Normal REST | Normal REST | Return 2xx fast, process async — non-2xx triggers aggressive provider retries |
+| Rate expectations | Low | Moderate | Bursty, retry-heavy |
 
 Endpoints:
 
