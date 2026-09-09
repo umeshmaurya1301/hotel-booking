@@ -6,8 +6,8 @@ import com.umesh.hotelbooking.entity.Payment;
 import com.umesh.hotelbooking.entity.PaymentState;
 import com.umesh.hotelbooking.entity.ReversalReason;
 import com.umesh.hotelbooking.exception.PaymentNotFoundException;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.PaymentRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.PaymentStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,19 +48,19 @@ public class PaymentSettlementService {
     private final LedgerService ledgerService;
     private final ReversalService reversalService;
     private final InventoryReservationService reservationService;
-    private final PaymentRepository paymentRepository;
-    private final BookingRepository bookingRepository;
+    private final PaymentStore paymentStore;
+    private final BookingStore bookingStore;
 
     public PaymentSettlementService(LedgerService ledgerService,
                                     ReversalService reversalService,
                                     InventoryReservationService reservationService,
-                                    PaymentRepository paymentRepository,
-                                    BookingRepository bookingRepository) {
+                                    PaymentStore paymentStore,
+                                    BookingStore bookingStore) {
         this.ledgerService = ledgerService;
         this.reversalService = reversalService;
         this.reservationService = reservationService;
-        this.paymentRepository = paymentRepository;
-        this.bookingRepository = bookingRepository;
+        this.paymentStore = paymentStore;
+        this.bookingStore = bookingStore;
     }
 
     /** For a caller with no {@code Payment}/{@code Booking} of its own in hand yet — see the
@@ -69,7 +69,7 @@ public class PaymentSettlementService {
     @Transactional
     public void settleByProviderReference(String providerReference, String correlationId) {
         Payment payment = findByProviderReference(providerReference);
-        Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
+        Booking booking = bookingStore.findById(payment.getBookingId()).orElseThrow();
         settle(payment, booking, correlationId);
     }
 
@@ -77,12 +77,12 @@ public class PaymentSettlementService {
     @Transactional
     public void failByProviderReference(String providerReference) {
         Payment payment = findByProviderReference(providerReference);
-        Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
+        Booking booking = bookingStore.findById(payment.getBookingId()).orElseThrow();
         fail(payment, booking);
     }
 
     private Payment findByProviderReference(String providerReference) {
-        return paymentRepository.findByProviderReference(providerReference)
+        return paymentStore.findByProviderReference(providerReference)
                 .orElseThrow(() -> new PaymentNotFoundException(String.valueOf(providerReference)));
     }
 

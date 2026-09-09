@@ -18,9 +18,9 @@ import com.umesh.hotelbooking.entity.ReversalReason;
 import com.umesh.hotelbooking.config.PaymentStatusCheckProperties;
 import com.umesh.hotelbooking.exception.InvalidRequestException;
 import com.umesh.hotelbooking.gateway.SimulatedOutcome;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.PaymentRepository;
-import com.umesh.hotelbooking.repository.ReversalRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.PaymentStore;
+import com.umesh.hotelbooking.repository.ReversalStore;
 import com.umesh.hotelbooking.web.ApiType;
 import com.umesh.hotelbooking.web.RequestMeta;
 import org.junit.jupiter.api.Test;
@@ -91,11 +91,11 @@ class StuckTransactionResolutionTest extends AbstractBookingConcurrencyTestSuppo
     @Autowired
     private PaymentReconciliationService reconciliationService;
     @Autowired
-    private PaymentRepository paymentRepository;
+    private PaymentStore paymentStore;
     @Autowired
-    private BookingRepository bookingRepository;
+    private BookingStore bookingStore;
     @Autowired
-    private ReversalRepository reversalRepository;
+    private ReversalStore reversalStore;
     @Autowired
     private LedgerService ledgerService;
     @Autowired
@@ -112,11 +112,11 @@ class StuckTransactionResolutionTest extends AbstractBookingConcurrencyTestSuppo
     }
 
     private Payment paymentOf(String paymentUid) {
-        return paymentRepository.findByPaymentUid(paymentUid).orElseThrow();
+        return paymentStore.findByPaymentUid(paymentUid).orElseThrow();
     }
 
     private BookingState bookingStateOf(String bookingUid) {
-        return bookingRepository.findByBookingUid(bookingUid).orElseThrow().getState();
+        return bookingStore.findByBookingUid(bookingUid).orElseThrow().getState();
     }
 
     /**
@@ -166,7 +166,7 @@ class StuckTransactionResolutionTest extends AbstractBookingConcurrencyTestSuppo
                 .as("money settled after the room was already given back to sale - reverse, don't confirm")
                 .isEqualTo(BookingState.REVERSED);
 
-        Booking reversedBooking = bookingRepository.findByBookingUid(booking.bookingUid()).orElseThrow();
+        Booking reversedBooking = bookingStore.findByBookingUid(booking.bookingUid()).orElseThrow();
         List<LedgerEntry> entries = ledgerService.findByBooking(reversedBooking.getId());
         assertThat(entries).extracting(LedgerEntry::getType)
                 .containsExactlyInAnyOrder(EntryType.CHARGE, EntryType.REVERSAL);
@@ -174,7 +174,7 @@ class StuckTransactionResolutionTest extends AbstractBookingConcurrencyTestSuppo
         BigDecimal reversed = sumByType(entries, EntryType.REVERSAL);
         assertThat(charged).as("charge and reversal must net to zero").isEqualByComparingTo(reversed);
 
-        List<Reversal> reversals = reversalRepository.findByBookingId(reversedBooking.getId());
+        List<Reversal> reversals = reversalStore.findByBookingId(reversedBooking.getId());
         assertThat(reversals).hasSize(1);
         assertThat(reversals.get(0).getReason()).isEqualTo(ReversalReason.LATE_SUCCESS_ON_EXPIRED_BOOKING);
     }
@@ -206,7 +206,7 @@ class StuckTransactionResolutionTest extends AbstractBookingConcurrencyTestSuppo
                 toSettle.paymentUid(), new ResolveManualReviewRequest(PaymentState.SETTLED, "gateway confirmed by phone"),
                 "corr-settle");
         assertThat(settleResponse.state()).isEqualTo(PaymentState.SETTLED);
-        Booking settledBooking = bookingRepository.findByBookingUid(toSettle.bookingUid()).orElseThrow();
+        Booking settledBooking = bookingStore.findByBookingUid(toSettle.bookingUid()).orElseThrow();
         assertThat(settledBooking.getState()).isEqualTo(BookingState.REVERSED);
         List<LedgerEntry> settleEntries = ledgerService.findByBooking(settledBooking.getId());
         assertThat(settleEntries).extracting(LedgerEntry::getType)
@@ -216,7 +216,7 @@ class StuckTransactionResolutionTest extends AbstractBookingConcurrencyTestSuppo
                 toFail.paymentUid(), new ResolveManualReviewRequest(PaymentState.FAILED, "confirmed declined"),
                 "corr-fail");
         assertThat(failResponse.state()).isEqualTo(PaymentState.FAILED);
-        Booking failedBooking = bookingRepository.findByBookingUid(toFail.bookingUid()).orElseThrow();
+        Booking failedBooking = bookingStore.findByBookingUid(toFail.bookingUid()).orElseThrow();
         assertThat(failedBooking.getState()).isEqualTo(BookingState.PAYMENT_FAILED);
         assertThat(ledgerService.findByBooking(failedBooking.getId()))
                 .as("a payment that never settled must never write a CHARGE").isEmpty();

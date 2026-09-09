@@ -15,16 +15,17 @@ import com.umesh.hotelbooking.entity.Payment;
 import com.umesh.hotelbooking.entity.PaymentMethod;
 import com.umesh.hotelbooking.entity.RoomType;
 import com.umesh.hotelbooking.gateway.SimulatedOutcome;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.LedgerEntryRepository;
-import com.umesh.hotelbooking.repository.PaymentRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.LedgerEntryStore;
+import com.umesh.hotelbooking.repository.PaymentStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import com.umesh.hotelbooking.service.BookingService;
 import com.umesh.hotelbooking.service.PaymentService;
 import com.umesh.hotelbooking.service.PropertyOnboardingService;
 import com.umesh.hotelbooking.web.ApiType;
 import com.umesh.hotelbooking.web.RequestMeta;
+import com.umesh.hotelbooking.repository.WebhookEventLogStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -69,23 +70,23 @@ class WebhookIdempotencyTest {
     @Autowired
     private HmacSigner signer;
     @Autowired
-    private WebhookEventLogRepository logRepository;
+    private WebhookEventLogStore logStore;
     @Autowired
     private PropertyOnboardingService onboardingService;
     @Autowired
-    private PropertyRepository propertyRepository;
+    private PropertyStore propertyStore;
     @Autowired
-    private RoomTypeRepository roomTypeRepository;
+    private RoomTypeStore roomTypeStore;
     @Autowired
     private BookingService bookingService;
     @Autowired
     private PaymentService paymentService;
     @Autowired
-    private PaymentRepository paymentRepository;
+    private PaymentStore paymentStore;
     @Autowired
-    private BookingRepository bookingRepository;
+    private BookingStore bookingStore;
     @Autowired
-    private LedgerEntryRepository ledgerEntryRepository;
+    private LedgerEntryStore ledgerEntryStore;
     @Autowired
     private Clock clock;
 
@@ -117,8 +118,8 @@ class WebhookIdempotencyTest {
                 "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Deluxe King", 5, 4, new BigDecimal("8000.00"))),
                 null));
-        RoomType roomType = roomTypeRepository.findByPropertyId(
-                propertyRepository.findByPropertyUid(property.propertyUid()).orElseThrow().getId()).get(0);
+        RoomType roomType = roomTypeStore.findByPropertyId(
+                propertyStore.findByPropertyUid(property.propertyUid()).orElseThrow().getId()).get(0);
         LocalDate checkIn = LocalDate.now(clock.withZone(ZoneId.of("Asia/Kolkata"))).plusDays(1);
 
         RequestMeta bookingMeta = new RequestMeta(UUID.randomUUID().toString(), ApiType.CREATE_BOOKING, UUID.randomUUID().toString());
@@ -129,7 +130,7 @@ class WebhookIdempotencyTest {
         PaymentResponse payment = paymentService.pay(booking.bookingUid(), payMeta,
                 new InitiatePaymentRequest(PaymentMethod.CARD, SimulatedOutcome.STUCK_FOREVER));
 
-        Payment paymentEntity = paymentRepository.findByPaymentUid(payment.paymentUid()).orElseThrow();
+        Payment paymentEntity = paymentStore.findByPaymentUid(payment.paymentUid()).orElseThrow();
         this.bookingUid = booking.bookingUid();
         return paymentEntity.getProviderReference();
     }
@@ -142,15 +143,15 @@ class WebhookIdempotencyTest {
         deliver(eventId, providerReference);
         deliver(eventId, providerReference);
 
-        assertThat(logRepository.findByProviderCodeAndEventId("MOCK_CARD", eventId)).isPresent();
-        assertThat(logRepository.findAll().stream()
+        assertThat(logStore.findByProviderCodeAndEventId("MOCK_CARD", eventId)).isPresent();
+        assertThat(logStore.findAll().stream()
                 .filter(row -> row.getEventId().equals(eventId)).count())
                 .as("exactly one webhook_event_log row for this eventId").isEqualTo(1);
 
-        Booking booking = bookingRepository.findByBookingUid(bookingUid).orElseThrow();
+        Booking booking = bookingStore.findByBookingUid(bookingUid).orElseThrow();
         assertThat(booking.getState()).isEqualTo(BookingState.CONFIRMED);
 
-        long chargeEntries = ledgerEntryRepository.findByBookingIdOrderByOccurredAtAsc(booking.getId()).stream()
+        long chargeEntries = ledgerEntryStore.findByBookingIdOrderByOccurredAtAsc(booking.getId()).stream()
                 .filter(entry -> entry.getType() == EntryType.CHARGE)
                 .count();
         assertThat(chargeEntries).as("exactly one ledger entry despite two deliveries").isEqualTo(1);
@@ -161,7 +162,7 @@ class WebhookIdempotencyTest {
         String providerReference = createUnsettledPayment();
 
         deliver(UUID.randomUUID().toString(), providerReference);
-        Booking confirmedOnce = bookingRepository.findByBookingUid(bookingUid).orElseThrow();
+        Booking confirmedOnce = bookingStore.findByBookingUid(bookingUid).orElseThrow();
         assertThat(confirmedOnce.getState()).isEqualTo(BookingState.CONFIRMED);
 
         // A second, genuinely different eventId for the same already-settled payment: the
@@ -169,10 +170,10 @@ class WebhookIdempotencyTest {
         // so the FSM-level guard in PaymentSettlementService.settle is what must catch it.
         deliver(UUID.randomUUID().toString(), providerReference);
 
-        Booking stillConfirmed = bookingRepository.findByBookingUid(bookingUid).orElseThrow();
+        Booking stillConfirmed = bookingStore.findByBookingUid(bookingUid).orElseThrow();
         assertThat(stillConfirmed.getState()).isEqualTo(BookingState.CONFIRMED);
 
-        long chargeEntries = ledgerEntryRepository.findByBookingIdOrderByOccurredAtAsc(stillConfirmed.getId()).stream()
+        long chargeEntries = ledgerEntryStore.findByBookingIdOrderByOccurredAtAsc(stillConfirmed.getId()).stream()
                 .filter(entry -> entry.getType() == EntryType.CHARGE)
                 .count();
         assertThat(chargeEntries).as("still one ledger entry across two different eventIds").isEqualTo(1);

@@ -16,9 +16,9 @@ import com.umesh.hotelbooking.gateway.PaymentGatewayProvider;
 import com.umesh.hotelbooking.gateway.PaymentGatewayRouter;
 import com.umesh.hotelbooking.gateway.ReversalRequest;
 import com.umesh.hotelbooking.gateway.ReversalResult;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.PaymentRepository;
-import com.umesh.hotelbooking.repository.ReversalRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.PaymentStore;
+import com.umesh.hotelbooking.repository.ReversalStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -44,22 +44,22 @@ public class ReversalService {
 
     private static final Logger log = LoggerFactory.getLogger(ReversalService.class);
 
-    private final ReversalRepository reversalRepository;
-    private final BookingRepository bookingRepository;
-    private final PaymentRepository paymentRepository;
+    private final ReversalStore reversalStore;
+    private final BookingStore bookingStore;
+    private final PaymentStore paymentStore;
     private final PaymentGatewayRouter router;
     private final LedgerService ledgerService;
     private final Clock clock;
 
-    public ReversalService(ReversalRepository reversalRepository,
-                           BookingRepository bookingRepository,
-                           PaymentRepository paymentRepository,
+    public ReversalService(ReversalStore reversalStore,
+                           BookingStore bookingStore,
+                           PaymentStore paymentStore,
                            PaymentGatewayRouter router,
                            LedgerService ledgerService,
                            Clock clock) {
-        this.reversalRepository = reversalRepository;
-        this.bookingRepository = bookingRepository;
-        this.paymentRepository = paymentRepository;
+        this.reversalStore = reversalStore;
+        this.bookingStore = bookingStore;
+        this.paymentStore = paymentStore;
         this.router = router;
         this.ledgerService = ledgerService;
         this.clock = clock;
@@ -73,9 +73,9 @@ public class ReversalService {
      */
     @Transactional
     public Reversal reverseBooking(String bookingUid, ReversalReason reason, String correlationId) {
-        Booking booking = bookingRepository.findByBookingUid(bookingUid)
+        Booking booking = bookingStore.findByBookingUid(bookingUid)
                 .orElseThrow(() -> new BookingNotFoundException(bookingUid));
-        Payment settledPayment = paymentRepository.findByBookingId(booking.getId()).stream()
+        Payment settledPayment = paymentStore.findByBookingId(booking.getId()).stream()
                 .filter(payment -> payment.getState() == PaymentState.SETTLED)
                 .findFirst()
                 .orElseThrow(() -> new InvalidPaymentStateException(
@@ -87,7 +87,7 @@ public class ReversalService {
     public Reversal reverse(Payment payment, Booking booking, ReversalReason reason, String correlationId) {
         ledgerService.assertWithinInvariant(booking, payment.getAmount());
 
-        Reversal reversal = reversalRepository.save(Reversal.builder()
+        Reversal reversal = reversalStore.save(Reversal.builder()
                 .bookingId(booking.getId())
                 .paymentId(payment.getId())
                 .reason(reason)

@@ -10,9 +10,9 @@ import com.umesh.hotelbooking.entity.Amenity;
 import com.umesh.hotelbooking.entity.DailyInventory;
 import com.umesh.hotelbooking.entity.Property;
 import com.umesh.hotelbooking.entity.RoomType;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import com.umesh.hotelbooking.service.PropertyOnboardingService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,11 +49,11 @@ class PropertySearchServiceTest {
     @Autowired
     private PropertyOnboardingService onboardingService;
     @Autowired
-    private PropertyRepository propertyRepository;
+    private PropertyStore propertyStore;
     @Autowired
-    private RoomTypeRepository roomTypeRepository;
+    private RoomTypeStore roomTypeStore;
     @Autowired
-    private DailyInventoryRepository dailyInventoryRepository;
+    private DailyInventoryStore dailyInventoryStore;
     @Autowired
     private PropertySearchService propertySearchService;
     @Autowired
@@ -75,12 +75,12 @@ class PropertySearchServiceTest {
     }
 
     private void fullyBook(String propertyUid, String roomTypeName, LocalDate night) {
-        Property property = propertyRepository.findByPropertyUid(propertyUid).orElseThrow();
-        RoomType roomType = roomTypeRepository.findByPropertyId(property.getId()).stream()
+        Property property = propertyStore.findByPropertyUid(propertyUid).orElseThrow();
+        RoomType roomType = roomTypeStore.findByPropertyId(property.getId()).stream()
                 .filter(rt -> rt.getName().equals(roomTypeName)).findFirst().orElseThrow();
-        DailyInventory row = dailyInventoryRepository.findByRoomTypeIdAndStayDate(roomType.getId(), night).orElseThrow();
+        DailyInventory row = dailyInventoryStore.findByRoomTypeIdAndStayDate(roomType.getId(), night).orElseThrow();
         row.setBookedUnits(row.getTotalUnits());
-        dailyInventoryRepository.save(row);
+        dailyInventoryStore.save(row);
     }
 
     @Test

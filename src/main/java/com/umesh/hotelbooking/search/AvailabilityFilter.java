@@ -2,7 +2,7 @@ package com.umesh.hotelbooking.search;
 
 import com.umesh.hotelbooking.entity.DailyInventory;
 import com.umesh.hotelbooking.entity.Property;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -47,11 +47,11 @@ import java.util.stream.Collectors;
 @Component
 public class AvailabilityFilter implements BatchSearchFilter {
 
-    private final DailyInventoryRepository dailyInventoryRepository;
+    private final DailyInventoryStore dailyInventoryStore;
     private final Clock clock;
 
-    public AvailabilityFilter(DailyInventoryRepository dailyInventoryRepository, Clock clock) {
-        this.dailyInventoryRepository = dailyInventoryRepository;
+    public AvailabilityFilter(DailyInventoryStore dailyInventoryStore, Clock clock) {
+        this.dailyInventoryStore = dailyInventoryStore;
         this.clock = clock;
     }
 
@@ -81,7 +81,7 @@ public class AvailabilityFilter implements BatchSearchFilter {
         LocalDate firstNight = criteria.nights().get(0);
         LocalDate lastNight = criteria.nights().get(criteria.nights().size() - 1);
         Map<Long, Map<LocalDate, DailyInventory>> rowsByRoomType =
-                dailyInventoryRepository.findByRoomTypeIdInAndStayDateBetween(roomTypeIds, firstNight, lastNight).stream()
+                dailyInventoryStore.findByRoomTypeIdInAndStayDateBetween(roomTypeIds, firstNight, lastNight).stream()
                         .collect(Collectors.groupingBy(DailyInventory::getRoomTypeId,
                                 Collectors.toMap(DailyInventory::getStayDate, row -> row)));
 

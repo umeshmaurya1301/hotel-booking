@@ -1,6 +1,9 @@
 package com.umesh.hotelbooking.entity;
 
+import com.umesh.hotelbooking.security.EncryptedLocalDateConverter;
+import com.umesh.hotelbooking.security.EncryptedStringConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -23,6 +26,20 @@ import java.util.UUID;
  *
  * <p>Every PII field is nullable: a first-time booker who supplies no {@code GuestDetails}
  * still gets a row with an id and nothing else, exactly as before this phase.
+ *
+ * <p><b>Every PII field is encrypted at rest</b> (Phase 10) via {@code EncryptedStringConverter}
+ * / {@code EncryptedLocalDateConverter} — AES-GCM, so a stolen database file or backup does not
+ * hand over names, emails, phones, addresses and dates of birth in the clear. Applied per field
+ * rather than globally: encrypting columns something queries by value (every {@code *_uid},
+ * {@code city_normalised}) would break those lookups outright.
+ *
+ * <p>The column lengths look arbitrary and are not. A field encrypted with a 12-byte IV and a
+ * 16-byte GCM tag, then Base64-encoded with a version prefix, is roughly
+ * {@code 4 * ceil((28 + utf8Bytes) / 3) + 3} characters — so each column is sized for its
+ * {@code GuestDetails} counterpart's {@code @Size} limit at the UTF-8 worst case of four bytes
+ * per character ({@code address}, capped at 300 characters on input, needs ~1640). The DTO's
+ * validation limits are what keep these bounds honest: they cap the plaintext before it ever
+ * reaches the converter.
  *
  * <p>Deliberately no unique constraint on {@code email}. Two bookings by the same person are
  * not a conflict, and a unique index on a redactable column would let an erasure tombstone
@@ -54,19 +71,24 @@ public class Guest {
     @Column(name = "guest_uid", unique = true, nullable = false, updatable = false, length = 36)
     private String guestUid;
 
-    @Column(name = "full_name", length = 120)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "full_name", length = 1024)
     private String fullName;
 
-    @Column(length = 200)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(length = 1536)
     private String email;
 
-    @Column(length = 20)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(length = 256)
     private String phone;
 
-    @Column(length = 300)
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(length = 2048)
     private String address;
 
-    @Column(name = "date_of_birth")
+    @Convert(converter = EncryptedLocalDateConverter.class)
+    @Column(name = "date_of_birth", length = 128)
     private LocalDate dateOfBirth;
 
     @Column(name = "redacted_at")

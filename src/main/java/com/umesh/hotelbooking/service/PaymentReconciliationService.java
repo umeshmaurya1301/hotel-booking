@@ -5,7 +5,6 @@ import com.umesh.hotelbooking.dto.ReconciliationRunResponse;
 import com.umesh.hotelbooking.dto.ResolveManualReviewRequest;
 import com.umesh.hotelbooking.dto.PaymentResponse;
 import com.umesh.hotelbooking.entity.Booking;
-import com.umesh.hotelbooking.entity.BookingState;
 import com.umesh.hotelbooking.entity.GatewayCheckStatus;
 import com.umesh.hotelbooking.entity.Payment;
 import com.umesh.hotelbooking.entity.PaymentState;
@@ -14,7 +13,6 @@ import com.umesh.hotelbooking.exception.InvalidPaymentStateException;
 import com.umesh.hotelbooking.exception.InvalidRequestException;
 import com.umesh.hotelbooking.exception.PaymentNotFoundException;
 import com.umesh.hotelbooking.gateway.CircuitBreakerOpenException;
-import com.umesh.hotelbooking.gateway.GatewayOutcome;
 import com.umesh.hotelbooking.gateway.GatewayTimeoutException;
 import com.umesh.hotelbooking.gateway.GatewayUnavailableException;
 import com.umesh.hotelbooking.gateway.PaymentCircuitBreaker;
@@ -22,9 +20,9 @@ import com.umesh.hotelbooking.gateway.PaymentGatewayClient;
 import com.umesh.hotelbooking.gateway.PaymentGatewayProvider;
 import com.umesh.hotelbooking.gateway.PaymentGatewayRouter;
 import com.umesh.hotelbooking.gateway.PaymentResult;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.PaymentRepository;
-import com.umesh.hotelbooking.repository.PaymentStatusCheckRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.PaymentStore;
+import com.umesh.hotelbooking.repository.PaymentStatusCheckStore;
 import com.umesh.hotelbooking.security.PayloadRedactor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,9 +57,9 @@ public class PaymentReconciliationService {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentReconciliationService.class);
 
-    private final PaymentRepository paymentRepository;
-    private final PaymentStatusCheckRepository statusCheckRepository;
-    private final BookingRepository bookingRepository;
+    private final PaymentStore paymentStore;
+    private final PaymentStatusCheckStore statusCheckStore;
+    private final BookingStore bookingStore;
     private final PaymentGatewayRouter router;
     private final PaymentGatewayClient gatewayClient;
     private final PaymentCircuitBreaker circuitBreaker;
@@ -72,9 +70,9 @@ public class PaymentReconciliationService {
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
 
-    public PaymentReconciliationService(PaymentRepository paymentRepository,
-                                        PaymentStatusCheckRepository statusCheckRepository,
-                                        BookingRepository bookingRepository,
+    public PaymentReconciliationService(PaymentStore paymentStore,
+                                        PaymentStatusCheckStore statusCheckStore,
+                                        BookingStore bookingStore,
                                         PaymentGatewayRouter router,
                                         PaymentGatewayClient gatewayClient,
                                         PaymentCircuitBreaker circuitBreaker,
@@ -84,9 +82,9 @@ public class PaymentReconciliationService {
                                         PaymentStatusCheckProperties properties,
                                         TransactionTemplate transactionTemplate,
                                         Clock clock) {
-        this.paymentRepository = paymentRepository;
-        this.statusCheckRepository = statusCheckRepository;
-        this.bookingRepository = bookingRepository;
+        this.paymentStore = paymentStore;
+        this.statusCheckStore = statusCheckStore;
+        this.bookingStore = bookingStore;
         this.router = router;
         this.gatewayClient = gatewayClient;
         this.circuitBreaker = circuitBreaker;
@@ -109,7 +107,7 @@ public class PaymentReconciliationService {
         String correlationId = UUID.randomUUID().toString();
 
         int checked = 0, settled = 0, failed = 0, manualReview = 0, pending = 0, errors = 0;
-        for (Payment due : paymentRepository.findByStateAndNextAttemptAtBefore(PaymentState.UNKNOWN, now)) {
+        for (Payment due : paymentStore.findByStateAndNextAttemptAtBefore(PaymentState.UNKNOWN, now)) {
             checked++;
             switch (reconcileOne(due.getId(), now, correlationId)) {
                 case SETTLED -> settled++;
@@ -136,14 +134,14 @@ public class PaymentReconciliationService {
      */
     private int releasePastHoldWindow(Instant now) {
         int released = 0;
-        for (Payment candidate : paymentRepository.findByStateAndInventoryReleasedFalse(PaymentState.UNKNOWN)) {
+        for (Payment candidate : paymentStore.findByStateAndInventoryReleasedFalse(PaymentState.UNKNOWN)) {
             if (candidate.isDueForInventoryRelease(now, properties.inventoryHoldWindow())) {
                 boolean didRelease = Boolean.TRUE.equals(transactionTemplate.execute(status -> {
-                    Payment payment = paymentRepository.findById(candidate.getId()).orElse(null);
+                    Payment payment = paymentStore.findById(candidate.getId()).orElse(null);
                     if (payment == null || payment.isInventoryReleased() || payment.getState() != PaymentState.UNKNOWN) {
                         return false;
                     }
-                    Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
+                    Booking booking = bookingStore.findById(payment.getBookingId()).orElseThrow();
                     reservationService.release(booking.getRoomTypeId(), booking.nights(), booking.getUnits());
                     payment.setInventoryReleased(true);
                     return true;
@@ -160,7 +158,7 @@ public class PaymentReconciliationService {
 
     private Outcome reconcileOne(Long paymentId, Instant now, String correlationId) {
         return transactionTemplate.execute(status -> {
-            Payment payment = paymentRepository.findById(paymentId).orElse(null);
+            Payment payment = paymentStore.findById(paymentId).orElse(null);
             if (payment == null || payment.getState() != PaymentState.UNKNOWN) {
                 return Outcome.SKIPPED;
             }
@@ -181,7 +179,7 @@ public class PaymentReconciliationService {
                 return Outcome.MANUAL_REVIEW;
             }
 
-            Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
+            Booking booking = bookingStore.findById(payment.getBookingId()).orElseThrow();
             return pollGateway(payment, booking, nextAttemptNo, now, correlationId);
         });
     }
@@ -243,7 +241,7 @@ public class PaymentReconciliationService {
             default -> throw new IllegalStateException("Unreachable: " + checkStatus);
         }
 
-        statusCheckRepository.save(PaymentStatusCheck.builder()
+        statusCheckStore.save(PaymentStatusCheck.builder()
                 .paymentId(payment.getId())
                 .attemptNo(loggedAttemptNo)
                 .checkedAt(now)
@@ -257,10 +255,10 @@ public class PaymentReconciliationService {
     }
 
     private Outcome resolveTerminal(Payment payment, Instant now, String reason, String correlationId) {
-        Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
+        Booking booking = bookingStore.findById(payment.getBookingId()).orElseThrow();
         settlementService.fail(payment, booking);
 
-        statusCheckRepository.save(PaymentStatusCheck.builder()
+        statusCheckStore.save(PaymentStatusCheck.builder()
                 .paymentId(payment.getId())
                 .attemptNo(payment.getAttemptNo())
                 .checkedAt(now)
@@ -284,7 +282,7 @@ public class PaymentReconciliationService {
     /** POST /api/v1/admin/payments/{id}/resolve — the human exit from MANUAL_REVIEW (7.6.3). */
     public PaymentResponse resolveManualReview(String paymentUid, ResolveManualReviewRequest request, String correlationId) {
         return transactionTemplate.execute(status -> {
-            Payment payment = paymentRepository.findByPaymentUid(paymentUid)
+            Payment payment = paymentStore.findByPaymentUid(paymentUid)
                     .orElseThrow(() -> new PaymentNotFoundException(paymentUid));
             if (payment.getState() != PaymentState.MANUAL_REVIEW) {
                 throw new InvalidPaymentStateException(
@@ -294,7 +292,7 @@ public class PaymentReconciliationService {
                 throw new InvalidRequestException("outcome must be SETTLED or FAILED");
             }
 
-            Booking booking = bookingRepository.findById(payment.getBookingId()).orElseThrow();
+            Booking booking = bookingStore.findById(payment.getBookingId()).orElseThrow();
             if (request.outcome() == PaymentState.SETTLED) {
                 settlementService.settle(payment, booking, correlationId);
             } else {
@@ -305,9 +303,9 @@ public class PaymentReconciliationService {
     }
 
     public List<PaymentResponse> listStuck() {
-        return paymentRepository.findByStateIn(List.of(PaymentState.UNKNOWN, PaymentState.MANUAL_REVIEW)).stream()
+        return paymentStore.findByStateIn(List.of(PaymentState.UNKNOWN, PaymentState.MANUAL_REVIEW)).stream()
                 .map(payment -> PaymentResponse.from(payment,
-                        bookingRepository.findById(payment.getBookingId()).map(Booking::getBookingUid).orElse(null)))
+                        bookingStore.findById(payment.getBookingId()).map(Booking::getBookingUid).orElse(null)))
                 .toList();
     }
 }

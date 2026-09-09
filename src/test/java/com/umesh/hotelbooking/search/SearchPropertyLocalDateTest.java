@@ -1,11 +1,13 @@
 package com.umesh.hotelbooking.search;
 
+import com.umesh.hotelbooking.config.FieldEncryptionConfig;
 import com.umesh.hotelbooking.dto.SearchPropertiesRequest;
 import com.umesh.hotelbooking.entity.DailyInventory;
 import com.umesh.hotelbooking.entity.Property;
 import com.umesh.hotelbooking.entity.RoomType;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
 import com.umesh.hotelbooking.service.MutableClock;
+import com.umesh.hotelbooking.repository.jpa.JpaStores;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -38,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * has not.
  */
 @DataJpaTest
-@Import(AvailabilityFilter.class)
+@Import({FieldEncryptionConfig.class, AvailabilityFilter.class, JpaStores.class})
 class SearchPropertyLocalDateTest {
 
     private static final Instant INSTANT = Instant.parse("2026-09-07T20:00:00Z");
@@ -54,7 +56,7 @@ class SearchPropertyLocalDateTest {
     }
 
     @Autowired
-    private DailyInventoryRepository dailyInventoryRepository;
+    private DailyInventoryStore dailyInventoryStore;
     @Autowired
     private AvailabilityFilter availabilityFilter;
     @Autowired
@@ -99,7 +101,7 @@ class SearchPropertyLocalDateTest {
     }
 
     private void materialise(long roomTypeId) {
-        dailyInventoryRepository.saveAndFlush(DailyInventory.builder()
+        dailyInventoryStore.saveAndFlush(DailyInventory.builder()
                 .roomTypeId(roomTypeId).stayDate(BOUNDARY_DATE).totalUnits(5).bookedUnits(0)
                 .pricePerUnit(new BigDecimal("8000.00")).currency("INR").build());
     }

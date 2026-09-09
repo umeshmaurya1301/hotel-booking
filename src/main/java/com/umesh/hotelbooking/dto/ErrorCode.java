@@ -25,7 +25,6 @@ public enum ErrorCode {
     BOOKING_NOT_FOUND(HttpStatus.NOT_FOUND),
     GUEST_NOT_FOUND(HttpStatus.NOT_FOUND),
     PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND),
-    REFUND_NOT_FOUND(HttpStatus.NOT_FOUND),
     INVENTORY_NOT_MATERIALISED(HttpStatus.NOT_FOUND),
 
     // 409 — conflicts with current state
@@ -59,12 +58,6 @@ public enum ErrorCode {
     // where a non-2xx is deliberate — see WebhookExceptionHandler
     SIGNATURE_INVALID(HttpStatus.UNAUTHORIZED),
     REPLAY_WINDOW_EXCEEDED(HttpStatus.UNAUTHORIZED),
-
-    // 200 — deliberately not an error status. The code is for the log line and the
-    // webhook_event_log row; a genuine processing bug on our side must still ack 2xx, or a
-    // provider's aggressive retry policy amplifies our own failure into a retry storm
-    // (design doc 11.4)
-    WEBHOOK_PROCESSING_FAILED(HttpStatus.OK),
 
     // 500 — catch-all
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR);

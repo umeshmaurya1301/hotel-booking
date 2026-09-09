@@ -7,9 +7,9 @@ import com.umesh.hotelbooking.entity.Property;
 import com.umesh.hotelbooking.entity.RoomType;
 import com.umesh.hotelbooking.event.BookingCompletedEvent;
 import com.umesh.hotelbooking.event.BookingExpiredEvent;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -55,24 +55,24 @@ public class BookingSweeper {
      */
     private static final ZoneOffset MAX_ZONE_AHEAD = ZoneOffset.ofHours(14);
 
-    private final BookingRepository bookingRepository;
-    private final PropertyRepository propertyRepository;
-    private final RoomTypeRepository roomTypeRepository;
+    private final BookingStore bookingStore;
+    private final PropertyStore propertyStore;
+    private final RoomTypeStore roomTypeStore;
     private final InventoryReservationService reservationService;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
 
-    public BookingSweeper(BookingRepository bookingRepository,
-                          PropertyRepository propertyRepository,
-                          RoomTypeRepository roomTypeRepository,
+    public BookingSweeper(BookingStore bookingStore,
+                          PropertyStore propertyStore,
+                          RoomTypeStore roomTypeStore,
                           InventoryReservationService reservationService,
                           ApplicationEventPublisher eventPublisher,
                           TransactionTemplate transactionTemplate,
                           Clock clock) {
-        this.bookingRepository = bookingRepository;
-        this.propertyRepository = propertyRepository;
-        this.roomTypeRepository = roomTypeRepository;
+        this.bookingStore = bookingStore;
+        this.propertyStore = propertyStore;
+        this.roomTypeStore = roomTypeStore;
         this.reservationService = reservationService;
         this.eventPublisher = eventPublisher;
         this.transactionTemplate = transactionTemplate;
@@ -93,7 +93,7 @@ public class BookingSweeper {
 
     private int expireLapsedHolds(AtomicInteger skipped) {
         Instant now = clock.instant();
-        List<Booking> candidates = bookingRepository.findByStateInAndHoldExpiresAtBefore(EXPIRABLE, now);
+        List<Booking> candidates = bookingStore.findByStateInAndHoldExpiresAtBefore(EXPIRABLE, now);
 
         int expired = 0;
         for (Booking candidate : candidates) {
@@ -118,7 +118,7 @@ public class BookingSweeper {
     private boolean expireOne(Long bookingId, Instant now, AtomicInteger skipped) {
         try {
             return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
-                Optional<Booking> reloaded = bookingRepository.findById(bookingId);
+                Optional<Booking> reloaded = bookingStore.findById(bookingId);
                 if (reloaded.isEmpty()) {
                     return false;
                 }
@@ -131,7 +131,7 @@ public class BookingSweeper {
                 int released = reservationService.release(
                         booking.getRoomTypeId(), booking.nights(), booking.getUnits());
 
-                String roomTypeUid = roomTypeRepository.findById(booking.getRoomTypeId())
+                String roomTypeUid = roomTypeStore.findById(booking.getRoomTypeId())
                         .map(RoomType::getRoomTypeUid).orElse(null);
                 eventPublisher.publishEvent(new BookingExpiredEvent(
                         booking.getBookingUid(), roomTypeUid, booking.getUnits(), released, now));
@@ -154,7 +154,7 @@ public class BookingSweeper {
     private int completePastCheckouts(AtomicInteger skipped) {
         LocalDate widestToday = LocalDate.now(clock.withZone(MAX_ZONE_AHEAD));
         List<Booking> candidates =
-                bookingRepository.findByStateAndCheckOutLessThanEqual(BookingState.CONFIRMED, widestToday);
+                bookingStore.findByStateAndCheckOutLessThanEqual(BookingState.CONFIRMED, widestToday);
 
         int completed = 0;
         for (Booking candidate : candidates) {
@@ -168,13 +168,13 @@ public class BookingSweeper {
     private boolean completeOne(Long bookingId, AtomicInteger skipped) {
         try {
             return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
-                Optional<Booking> reloaded = bookingRepository.findById(bookingId);
+                Optional<Booking> reloaded = bookingStore.findById(bookingId);
                 if (reloaded.isEmpty() || reloaded.get().getState() != BookingState.CONFIRMED) {
                     return false;
                 }
                 Booking booking = reloaded.get();
 
-                Optional<Property> property = propertyRepository.findById(booking.getPropertyId());
+                Optional<Property> property = propertyStore.findById(booking.getPropertyId());
                 if (property.isEmpty()) {
                     return false;
                 }

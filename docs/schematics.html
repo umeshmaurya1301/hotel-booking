@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html{color-scheme:light dark}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Hotel Booking Schematics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --paper:#F5F6F3;
+    --surface:#FCFCFA;
+    --sunk:#EEF0EB;
+    --ink:#161D1F;
+    --ink-2:#5A6668;
+    --ink-3:#7C8785;
+    --rule:#D2D8D3;
+    --rule-strong:#A8B2AC;
+    --brass:#9A6E24;
+    --brass-soft:rgba(154,110,36,.10);
+    --teal:#1D6B66;
+    --teal-soft:rgba(29,107,102,.10);
+    --display:"Fraunces",Georgia,"Times New Roman",serif;
+    --body:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+    --mono:"IBM Plex Mono","SFMono-Regular",Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --paper:#101416; --surface:#161B1D; --sunk:#1B2124;
+      --ink:#E4E9E5; --ink-2:#94A19F; --ink-3:#77837F;
+      --rule:#29322F; --rule-strong:#3D4845;
+      --brass:#D9A650; --brass-soft:rgba(217,166,80,.14);
+      --teal:#4FB8B0; --teal-soft:rgba(79,184,176,.14);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#101416; --surface:#161B1D; --sunk:#1B2124;
+    --ink:#E4E9E5; --ink-2:#94A19F; --ink-3:#77837F;
+    --rule:#29322F; --rule-strong:#3D4845;
+    --brass:#D9A650; --brass-soft:rgba(217,166,80,.14);
+    --teal:#4FB8B0; --teal-soft:rgba(79,184,176,.14);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:var(--body); font-size:15px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .sheet{max-width:1180px;margin:0 auto;padding:44px 28px 80px;display:flex;flex-direction:column;gap:52px}
+
+  /* ---- masthead ---- */
+  .mast{display:flex;flex-direction:column;gap:14px;border-bottom:1px solid var(--rule-strong);padding-bottom:26px}
+  .eyebrow{
+    font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--brass);
+  }
+  h1{
+    font-family:var(--display);font-weight:600;font-size:clamp(34px,5.4vw,54px);
+    line-height:1.04;margin:0;letter-spacing:-.015em;text-wrap:balance;
+  }
+  .standfirst{max-width:64ch;color:var(--ink-2);font-size:16px;margin:0}
+  .facts{display:flex;flex-wrap:wrap;gap:0;margin-top:8px;border-top:1px solid var(--rule)}
+  .fact{
+    display:flex;flex-direction:column;gap:2px;padding:12px 22px 12px 0;margin-right:22px;
+    border-right:1px solid var(--rule);
+  }
+  .fact:last-child{border-right:0}
+  .fact b{font-family:var(--mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .fact span{font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+
+  /* ---- sections ---- */
+  section{display:flex;flex-direction:column;gap:18px}
+  h2{
+    font-family:var(--display);font-weight:600;font-size:27px;line-height:1.15;
+    margin:0;letter-spacing:-.01em;
+  }
+  .lede{max-width:70ch;color:var(--ink-2);margin:0}
+  .sec-head{display:flex;flex-direction:column;gap:9px}
+
+  /* ---- figures ---- */
+  figure{margin:0;display:flex;flex-direction:column;gap:12px}
+  .plate{
+    background:var(--surface);border:1px solid var(--rule);border-radius:2px;
+    padding:22px 18px;overflow-x:auto;
+  }
+  .plate svg{display:block;height:auto;color:var(--ink)}
+  figcaption{color:var(--ink-2);font-size:13.5px;max-width:78ch;line-height:1.55}
+  figcaption b{color:var(--ink);font-weight:600}
+
+  /* svg shared classes */
+  .box{fill:var(--surface);stroke:var(--rule-strong);stroke-width:1}
+  .box-sunk{fill:var(--sunk);stroke:var(--rule-strong);stroke-width:1}
+  .box-seam{fill:var(--brass-soft);stroke:var(--brass);stroke-width:1.4}
+  .box-guard{fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.2}
+  .lbl{font-family:var(--mono);font-size:11.5px;fill:var(--ink)}
+  .lbl-sm{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
+  .lbl-b{font-family:var(--mono);font-size:12px;font-weight:600;fill:var(--ink)}
+  .lbl-brass{font-family:var(--mono);font-size:11px;font-weight:600;fill:var(--brass)}
+  .lbl-teal{font-family:var(--mono);font-size:10.5px;fill:var(--teal)}
+  .band{font-family:var(--mono);font-size:10px;letter-spacing:.11em;fill:var(--ink-3)}
+  .flow{stroke:var(--ink-3);stroke-width:1.2;fill:none}
+  .flow-brass{stroke:var(--brass);stroke-width:1.5;fill:none}
+  .ref{stroke:var(--ink-3);stroke-width:1;fill:none;stroke-dasharray:3 3}
+  .fk{stroke:var(--ink);stroke-width:1.3;fill:none}
+  .hair{stroke:var(--rule);stroke-width:1}
+  .seamline{stroke:var(--brass);stroke-width:1.4;stroke-dasharray:7 4}
+
+  /* ---- legend ---- */
+  .legend{display:flex;flex-wrap:wrap;gap:8px 26px;font-family:var(--mono);font-size:11.5px;color:var(--ink-2)}
+  .legend i{display:inline-flex;align-items:center;gap:8px;font-style:normal}
+  .legend svg{flex:none}
+
+  /* ---- tables ---- */
+  .tablewrap{overflow-x:auto;border:1px solid var(--rule);border-radius:2px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:640px;font-size:13.5px}
+  caption{text-align:left;padding:14px 16px 0;font-family:var(--mono);font-size:11px;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--brass)}
+  th,td{text-align:left;padding:9px 16px;border-bottom:1px solid var(--rule);vertical-align:top}
+  thead th{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:500;border-bottom:1px solid var(--rule-strong);
+  }
+  tbody tr:last-child td{border-bottom:0}
+  td code{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+  td.why{color:var(--ink-2)}
+  .tag{
+    font-family:var(--mono);font-size:10px;letter-spacing:.06em;padding:2px 7px;border-radius:2px;
+    border:1px solid currentColor;white-space:nowrap;
+  }
+  .tag-guard{color:var(--teal)}
+  .tag-idx{color:var(--ink-3)}
+  .tag-uq{color:var(--brass)}
+
+  /* ---- notes ---- */
+  .note{
+    border-left:2px solid var(--brass);background:var(--brass-soft);
+    padding:14px 18px;font-size:14px;color:var(--ink);max-width:80ch;
+  }
+  .note b{font-weight:600}
+  .note code,.lede code,figcaption code{font-family:var(--mono);font-size:.92em}
+
+  footer{
+    border-top:1px solid var(--rule);padding-top:18px;color:var(--ink-3);
+    font-family:var(--mono);font-size:11.5px;display:flex;flex-wrap:wrap;gap:6px 24px;
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  @media (max-width:640px){
+    .sheet{padding:32px 16px 60px;gap:40px}
+    .fact{padding-right:16px;margin-right:16px}
+  }
+</style>
+</head>
+<body>
+
+<div class="sheet">
+
+  <header class="mast">
+    <div class="eyebrow">Rupeek SDE-3 · machine coding · reference sheet</div>
+    <h1>Hotel Booking Schematics</h1>
+    <p class="standfirst">Every box, column and constraint below is read out of the running code — not an
+      idealised target state. Three plates: how the layers depend on each other, how a room-night is
+      reserved without ever being sold twice, and what the database actually holds.</p>
+    <div class="facts">
+      <div class="fact"><b>16</b><span>tables</span></div>
+      <div class="fact"><b>14</b><span>persistence ports</span></div>
+      <div class="fact"><b>10</b><span>booking states</span></div>
+      <div class="fact"><b>3</b><span>overbooking defences</span></div>
+      <div class="fact"><b>268</b><span>tests, 0 failing</span></div>
+    </div>
+  </header>
+
+  <!-- ============ PLATE 1 : ARCHITECTURE ============ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Plate one</div>
+      <h2>Layers, and the line technology cannot cross</h2>
+      <p class="lede">Dependencies run one way, top to bottom. The brass line is the persistence seam:
+        everything above it is written in domain terms, and <code>repository.jpa</code> below it is the only
+        package in the application that names a Spring Data type or contains a line of JPQL.</p>
+    </div>
+
+    <figure>
+      <div class="plate">
+        <svg viewBox="0 0 1120 700" style="min-width:940px" role="img"
+             aria-label="Layered architecture: controllers depend on services, services depend only on Store ports, and the JPA adapter package below the port seam is the sole holder of Spring Data and JPQL.">
+          <defs>
+            <marker id="a-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,1 9,5 0,9" fill="var(--ink-3)"/>
+            </marker>
+            <marker id="a-brass" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,1 9,5 0,9" fill="var(--brass)"/>
+            </marker>
+          </defs>
+
+          <!-- band 1 : http edge -->
+          <text class="band" x="16" y="30">HTTP EDGE</text>
+          <rect class="box" x="16" y="42" width="176" height="52" rx="2"/>
+          <text class="lbl-b" x="30" y="66">controller.user</text>
+          <text class="lbl-sm" x="30" y="82">search · book · pay · cancel</text>
+
+          <rect class="box" x="204" y="42" width="176" height="52" rx="2"/>
+          <text class="lbl-b" x="218" y="66">controller.admin</text>
+          <text class="lbl-sm" x="218" y="82">onboard · inventory · ledger</text>
+
+          <rect class="box" x="392" y="42" width="176" height="52" rx="2"/>
+          <text class="lbl-b" x="406" y="66">controller.webhook</text>
+          <text class="lbl-sm" x="406" y="82">HMAC-signed callbacks</text>
+
+          <rect class="box-sunk" x="600" y="42" width="216" height="52" rx="2"/>
+          <text class="lbl-b" x="614" y="66">controller.advice</text>
+          <text class="lbl-sm" x="614" y="82">envelope in/out · ErrorCode → status</text>
+
+          <rect class="box-sunk" x="828" y="42" width="276" height="52" rx="2"/>
+          <text class="lbl-b" x="842" y="66">web</text>
+          <text class="lbl-sm" x="842" y="82">correlation id · X-Role · api type</text>
+
+          <line class="flow" x1="104" y1="94" x2="104" y2="150" marker-end="url(#a-ink)"/>
+          <text class="lbl-sm" x="114" y="126">ApiRequest&lt;T&gt;, validated</text>
+
+          <!-- band 2 : domain -->
+          <text class="band" x="16" y="176">DOMAIN — SERVICE &amp; SEARCH</text>
+          <rect class="box" x="16" y="188" width="152" height="50" rx="2"/>
+          <text class="lbl-b" x="30" y="210">BookingService</text>
+          <text class="lbl-sm" x="30" y="226">hold · line items</text>
+
+          <rect class="box" x="180" y="188" width="152" height="50" rx="2"/>
+          <text class="lbl-b" x="194" y="210">PaymentService</text>
+          <text class="lbl-sm" x="194" y="226">idempotent attempt</text>
+
+          <rect class="box" x="344" y="188" width="168" height="50" rx="2"/>
+          <text class="lbl-b" x="358" y="210">CancellationService</text>
+          <text class="lbl-sm" x="358" y="226">RefundPolicy ×3</text>
+
+          <rect class="box-guard" x="524" y="188" width="212" height="50" rx="2"/>
+          <text class="lbl-b" x="538" y="210">InventoryReservationService</text>
+          <text class="lbl-teal" x="538" y="226">reserve / release · see plate two</text>
+
+          <rect class="box" x="748" y="188" width="160" height="50" rx="2"/>
+          <text class="lbl-b" x="762" y="210">SearchFilterChain</text>
+          <text class="lbl-sm" x="762" y="226">7 SearchFilter beans</text>
+
+          <rect class="box-sunk" x="920" y="188" width="184" height="140" rx="2"/>
+          <text class="lbl-b" x="934" y="210">gateway</text>
+          <text class="lbl-sm" x="934" y="228">PaymentGatewayProvider</text>
+          <text class="lbl-sm" x="934" y="244">├ MockCardProvider</text>
+          <text class="lbl-sm" x="934" y="260">├ MockUpiProvider</text>
+          <text class="lbl-sm" x="934" y="276">└ MockWalletProvider</text>
+          <line class="hair" x1="934" y1="288" x2="1090" y2="288"/>
+          <text class="lbl-sm" x="934" y="304">circuit breaker · bulkhead</text>
+          <text class="lbl-sm" x="934" y="320">crypto · webhook · security</text>
+
+          <line class="flow" x1="908" y1="213" x2="920" y2="213" marker-end="url(#a-ink)"/>
+
+          <line class="flow" x1="104" y1="238" x2="104" y2="292" marker-end="url(#a-ink)"/>
+          <text class="lbl-sm" x="114" y="268">calls ports only</text>
+
+          <!-- seam -->
+          <line class="seamline" x1="16" y1="300" x2="1104" y2="300"/>
+          <text class="lbl-brass" x="16" y="292">▲ nothing above this line imports org.springframework.data</text>
+
+          <!-- band 3 : ports -->
+          <text class="band" x="16" y="330">PORTS — repository</text>
+          <rect class="box-seam" x="16" y="342" width="888" height="86" rx="2"/>
+          <text class="lbl-brass" x="32" y="366">14 × *Store — plain Java interfaces over domain types</text>
+          <text class="lbl" x="32" y="388">BookingStore · DailyInventoryStore · PaymentStore · PropertyStore · RoomTypeStore</text>
+          <text class="lbl" x="32" y="405">GuestStore · RefundStore · ReversalStore · LedgerEntryStore · OwnerStore · …</text>
+          <text class="lbl-sm" x="32" y="421">reserveUnits() states the contract: reserve-or-refuse, atomic, answered by a count</text>
+
+          <line class="flow-brass" x1="104" y1="428" x2="104" y2="480" marker-end="url(#a-brass)"/>
+          <text class="lbl-brass" x="114" y="458">JpaStores binds port → adapter</text>
+
+          <!-- band 4 : adapters -->
+          <text class="band" x="16" y="504">ADAPTERS — repository.jpa</text>
+          <rect class="box" x="16" y="516" width="436" height="74" rx="2"/>
+          <text class="lbl-b" x="30" y="540">Jpa*Store — 14 adapters</text>
+          <text class="lbl-sm" x="30" y="558">package-private · thin delegation</text>
+          <text class="lbl-sm" x="30" y="576">JpaPropertyStore hides the two-query fetch</text>
+
+          <rect class="box" x="468" y="516" width="436" height="74" rx="2"/>
+          <text class="lbl-b" x="482" y="540">Jpa*Repository — 14 Spring Data interfaces</text>
+          <text class="lbl-sm" x="482" y="558">derived queries · @Query · @Modifying</text>
+          <text class="lbl-sm" x="482" y="576">the only JPQL in the application</text>
+
+          <line class="flow" x1="234" y1="590" x2="234" y2="630" marker-end="url(#a-ink)"/>
+
+          <!-- band 5 : store -->
+          <rect class="box-sunk" x="16" y="630" width="888" height="50" rx="2"/>
+          <text class="lbl-b" x="30" y="652">entity — JPA entities + state machines</text>
+          <text class="lbl-sm" x="30" y="668">H2 in-memory by default · MySQL reference profile · schema generated from annotations</text>
+        </svg>
+      </div>
+      <figcaption><b>What this plate proves.</b> A reader can point at the one package that would be
+        rewritten to move off JPA. Swapping the store means replacing the two boxes below the brass line and
+        the bindings in <code>JpaStores</code> — the services, filters and controllers above it never named a
+        persistence type, so they do not change. A test (<code>PersistenceSeamTest</code>) fails the build if
+        that stops being true.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ PLATE 2 : RESERVE MECHANISM ============ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Plate two</div>
+      <h2>How a room-night is taken exactly once</h2>
+      <p class="lede">Booking is a check-then-act, and check-then-act is where double-booking lives. The fix
+        is not a lock around the sequence — it is removing the sequence. Three defences, each doing a
+        different job.</p>
+    </div>
+
+    <figure>
+      <div class="plate">
+        <svg viewBox="0 0 1120 350" style="min-width:900px" role="img"
+             aria-label="Reservation path: nights sorted ascending, an in-JVM lock for throughput, a single conditional UPDATE for correctness whose row count is the answer, and a database check constraint as the final backstop.">
+          <defs>
+            <marker id="a-ink2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,1 9,5 0,9" fill="var(--ink-3)"/>
+            </marker>
+            <marker id="a-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,1 9,5 0,9" fill="var(--teal)"/>
+            </marker>
+          </defs>
+
+          <rect class="box" x="16" y="60" width="150" height="60" rx="2"/>
+          <text class="lbl-b" x="30" y="84">BookingCreator</text>
+          <text class="lbl-sm" x="30" y="101">one transaction</text>
+
+          <line class="flow" x1="166" y1="90" x2="206" y2="90" marker-end="url(#a-ink2)"/>
+
+          <rect class="box" x="206" y="52" width="196" height="76" rx="2"/>
+          <text class="lbl-b" x="220" y="74">InventoryReservationService</text>
+          <text class="lbl-sm" x="220" y="92">nights sorted ascending —</text>
+          <text class="lbl-sm" x="220" y="108">no circular wait, no deadlock</text>
+
+          <line class="flow" x1="402" y1="90" x2="442" y2="90" marker-end="url(#a-ink2)"/>
+
+          <!-- defence 1 -->
+          <rect class="box-sunk" x="442" y="52" width="168" height="76" rx="2"/>
+          <text class="lbl-sm" x="456" y="44">DEFENCE 1 · throughput</text>
+          <text class="lbl-b" x="456" y="76">InventoryLockRegistry</text>
+          <text class="lbl-sm" x="456" y="94">in-JVM, per room-night</text>
+          <text class="lbl-sm" x="456" y="110">switchable — not correctness</text>
+
+          <line class="flow" x1="610" y1="90" x2="650" y2="90" marker-end="url(#a-ink2)"/>
+
+          <rect class="box-seam" x="650" y="52" width="196" height="76" rx="2"/>
+          <text class="lbl-brass" x="664" y="44">PORT</text>
+          <text class="lbl-brass" x="664" y="76">DailyInventoryStore</text>
+          <text class="lbl-sm" x="664" y="94">.reserveUnits(id, night, n)</text>
+          <text class="lbl-sm" x="664" y="110">returns 1 taken · 0 unavailable</text>
+
+          <line class="flow" x1="748" y1="128" x2="748" y2="176" marker-end="url(#a-ink2)"/>
+          <text class="lbl-sm" x="758" y="156">JpaDailyInventoryStore</text>
+
+          <!-- defence 2 -->
+          <rect class="box-guard" x="442" y="176" width="404" height="70" rx="2"/>
+          <text class="lbl-teal" x="456" y="168">DEFENCE 2 · correctness</text>
+          <text class="lbl-b" x="456" y="200">UPDATE daily_inventory SET booked_units = booked_units + :n</text>
+          <text class="lbl-b" x="456" y="218">  WHERE room_type_id = :id AND stay_date = :d</text>
+          <text class="lbl-b" x="456" y="236">    AND booked_units + :n &lt;= total_units</text>
+
+          <line class="flow" x1="644" y1="246" x2="644" y2="286" marker-end="url(#a-ink2)"/>
+
+          <!-- defence 3 -->
+          <rect class="box-guard" x="442" y="286" width="404" height="46" rx="2"/>
+          <text class="lbl-teal" x="456" y="278">DEFENCE 3 · backstop</text>
+          <text class="lbl-b" x="456" y="308">CHECK ck_not_overbooked: booked_units &lt;= total_units</text>
+          <text class="lbl-sm" x="456" y="324">application logic can be wrong; a check constraint cannot be bypassed</text>
+
+          <!-- failure path -->
+          <line class="ref" x1="442" y1="211" x2="330" y2="211"/>
+          <line class="ref" x1="330" y1="211" x2="330" y2="150"/>
+          <line class="ref" x1="330" y1="150" x2="304" y2="150"/>
+          <polygon points="304,146 296,150 304,154" fill="var(--ink-3)"/>
+          <text class="lbl-sm" x="120" y="205">0 rows →</text>
+          <text class="lbl-sm" x="120" y="221">InventoryUnavailableException</text>
+          <text class="lbl-sm" x="120" y="237">→ transaction rolls back,</text>
+          <text class="lbl-sm" x="120" y="253">every night released</text>
+
+          <rect class="box-sunk" x="880" y="52" width="224" height="180" rx="2"/>
+          <text class="lbl-b" x="894" y="76">Why not SELECT … FOR UPDATE</text>
+          <line class="hair" x1="894" y1="86" x2="1090" y2="86"/>
+          <text class="lbl-sm" x="894" y="106">Two round trips instead of one.</text>
+          <text class="lbl-sm" x="894" y="124">Holds the row lock across the</text>
+          <text class="lbl-sm" x="894" y="142">application's decision, not just</text>
+          <text class="lbl-sm" x="894" y="160">the statement.</text>
+          <text class="lbl-sm" x="894" y="184">And it puts correctness in the</text>
+          <text class="lbl-sm" x="894" y="202">hands of code that could forget</text>
+          <text class="lbl-sm" x="894" y="220">to take the lock.</text>
+        </svg>
+      </div>
+      <figcaption><b>The row count is the answer.</b> Predicate and mutation are the same statement, evaluated
+        under the row lock the database already takes to perform the write — so there is no window for a
+        competing transaction to read stale availability and act on it. Nothing re-reads to "confirm".
+        A multi-night booking issues one such statement per night in one transaction: if night two returns 0,
+        the rollback releases nights one and three, so there is no compensating decrement to write and none to
+        get wrong.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ PLATE 3 : SCHEMA ============ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Plate three</div>
+      <h2>Database schema</h2>
+      <p class="lede">Sixteen tables in three groups — the supply side an owner onboards, the demand side a
+        guest creates, and the money trail every booking leaves. Two tables sit apart because they deliberately
+        reference nothing.</p>
+    </div>
+
+    <div class="legend">
+      <i><svg width="34" height="10" aria-hidden="true"><line class="fk" x1="0" y1="5" x2="26" y2="5"/><polygon points="26,1 34,5 26,9" fill="var(--ink)"/></svg> owns — real FK constraint</i>
+      <i><svg width="34" height="10" aria-hidden="true"><line class="ref" x1="0" y1="5" x2="26" y2="5"/><polygon points="26,1 34,5 26,9" fill="var(--ink-3)"/></svg> references — plain id column, no FK by design</i>
+      <i><span class="tag tag-uq">UQ</span> unique</i>
+      <i><span class="tag tag-guard">enc</span> encrypted at rest</i>
+    </div>
+
+    <figure>
+      <div class="plate">
+        <svg viewBox="0 0 1180 980" style="min-width:1060px" role="img"
+             aria-label="Entity relationship diagram of sixteen tables in supply, demand and money groups, distinguishing real foreign key constraints from plain identifier columns that carry no database-level foreign key.">
+          <defs>
+            <marker id="a-fk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,1 9,5 0,9" fill="var(--ink)"/>
+            </marker>
+            <marker id="a-ref" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <polygon points="0,1 9,5 0,9" fill="var(--ink-3)"/>
+            </marker>
+          </defs>
+
+          <text class="band" x="36" y="30">SUPPLY — WHAT AN OWNER ONBOARDS</text>
+          <text class="band" x="330" y="30">DEMAND</text>
+          <text class="band" x="624" y="30">MONEY</text>
+
+          <!-- ===== COLUMN A : supply ===== -->
+          <g transform="translate(36,54)">
+            <rect class="box" x="0" y="0" width="214" height="100" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">owners</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">owner_uid</text><text class="lbl-sm" x="204" y="55" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="72">name</text>
+            <text class="lbl" x="10" y="89">email</text>
+          </g>
+
+          <g transform="translate(36,186)">
+            <rect class="box" x="0" y="0" width="214" height="117" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">property_groups</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">property_group_uid</text><text class="lbl-sm" x="204" y="55" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="72">owner_id</text><text class="lbl-sm" x="204" y="72" text-anchor="end">FK</text>
+            <text class="lbl" x="10" y="89">settlement_bank_code</text>
+            <text class="lbl" x="10" y="106">refund_policy_code</text>
+          </g>
+
+          <g transform="translate(36,335)">
+            <rect class="box" x="0" y="0" width="214" height="151" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">properties</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">property_uid</text><text class="lbl-sm" x="204" y="55" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="72">property_group_id</text><text class="lbl-sm" x="204" y="72" text-anchor="end">FK</text>
+            <text class="lbl" x="10" y="89">city_normalised</text><text class="lbl-sm" x="204" y="89" text-anchor="end">IDX</text>
+            <text class="lbl" x="10" y="106">star_rating</text><text class="lbl-sm" x="204" y="106" text-anchor="end">IDX</text>
+            <text class="lbl" x="10" y="123">zone_id</text>
+            <text class="lbl" x="10" y="140">currency</text>
+          </g>
+
+          <g transform="translate(36,518)">
+            <rect class="box" x="0" y="0" width="214" height="134" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">room_types</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">room_type_uid</text><text class="lbl-sm" x="204" y="55" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="72">property_id</text><text class="lbl-sm" x="204" y="72" text-anchor="end">FK</text>
+            <text class="lbl" x="10" y="89">total_units</text>
+            <text class="lbl" x="10" y="106">max_guests</text>
+            <text class="lbl" x="10" y="123">base_price_per_night</text>
+          </g>
+
+          <g transform="translate(36,684)">
+            <rect class="box-guard" x="0" y="0" width="214" height="134" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">daily_inventory</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">room_type_id</text><text class="lbl-sm" x="204" y="55" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="72">stay_date</text><text class="lbl-sm" x="204" y="72" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="89">total_units</text>
+            <text class="lbl" x="10" y="106">booked_units</text>
+            <text class="lbl" x="10" y="123">price_per_unit</text>
+          </g>
+
+          <g transform="translate(36,850)">
+            <rect class="box" x="0" y="0" width="214" height="66" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">property_amenities</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">property_id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">FK</text>
+            <text class="lbl" x="10" y="55">amenity</text>
+          </g>
+
+          <!-- annotation : the guarded table -->
+          <g transform="translate(296,684)">
+            <rect class="box-guard" x="0" y="0" width="300" height="134" rx="2"/>
+            <text class="lbl-teal" x="12" y="18">daily_inventory carries the guarantee</text>
+            <line class="hair" x1="12" y1="27" x2="288" y2="27"/>
+            <text class="lbl" x="12" y="45">uq_inventory_slot</text>
+            <text class="lbl-sm" x="12" y="60">UNIQUE (room_type_id, stay_date)</text>
+            <text class="lbl-sm" x="12" y="75">— exactly one row per room-night</text>
+            <text class="lbl" x="12" y="95">ck_not_overbooked</text>
+            <text class="lbl-sm" x="12" y="110">CHECK booked_units &lt;= total_units</text>
+            <text class="lbl-sm" x="12" y="125">— the defence that cannot be bypassed</text>
+          </g>
+
+          <!-- ===== COLUMN B : demand ===== -->
+          <g transform="translate(330,54)">
+            <rect class="box" x="0" y="0" width="214" height="151" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">guests</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">guest_uid</text><text class="lbl-sm" x="204" y="55" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="72">full_name</text><text class="lbl-teal" x="204" y="72" text-anchor="end">enc</text>
+            <text class="lbl" x="10" y="89">email</text><text class="lbl-teal" x="204" y="89" text-anchor="end">enc</text>
+            <text class="lbl" x="10" y="106">phone</text><text class="lbl-teal" x="204" y="106" text-anchor="end">enc</text>
+            <text class="lbl" x="10" y="123">date_of_birth</text><text class="lbl-teal" x="204" y="123" text-anchor="end">enc</text>
+            <text class="lbl" x="10" y="140">redacted_at</text>
+          </g>
+
+          <g transform="translate(330,250)">
+            <rect class="box" x="0" y="0" width="214" height="236" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">bookings</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">booking_uid</text><text class="lbl-sm" x="204" y="55" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="72">guest_id</text><text class="lbl-sm" x="204" y="72" text-anchor="end">ref</text>
+            <text class="lbl" x="10" y="89">property_id</text><text class="lbl-sm" x="204" y="89" text-anchor="end">ref</text>
+            <text class="lbl" x="10" y="106">room_type_id</text><text class="lbl-sm" x="204" y="106" text-anchor="end">ref</text>
+            <text class="lbl" x="10" y="123">check_in</text>
+            <text class="lbl" x="10" y="140">check_out</text>
+            <text class="lbl" x="10" y="157">units</text>
+            <text class="lbl" x="10" y="174">total_amount</text>
+            <text class="lbl" x="10" y="191">state</text><text class="lbl-sm" x="204" y="191" text-anchor="end">enum</text>
+            <text class="lbl" x="10" y="208">hold_expires_at</text>
+            <text class="lbl" x="10" y="225">version</text><text class="lbl-sm" x="204" y="225" text-anchor="end">opt-lock</text>
+          </g>
+
+          <g transform="translate(330,518)">
+            <rect class="box" x="0" y="0" width="214" height="134" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">booking_line_items</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">booking_id</text><text class="lbl-sm" x="204" y="55" text-anchor="end">FK</text>
+            <text class="lbl" x="10" y="72">stay_date</text>
+            <text class="lbl" x="10" y="89">units</text>
+            <text class="lbl" x="10" y="106">price_per_unit</text>
+            <text class="lbl" x="10" y="123">line_total</text>
+          </g>
+
+          <!-- ===== COLUMN C : money ===== -->
+          <g transform="translate(624,54)">
+            <rect class="box" x="0" y="0" width="214" height="219" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">payments</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">payment_uid</text><text class="lbl-sm" x="204" y="55" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="72">booking_id</text><text class="lbl-sm" x="204" y="72" text-anchor="end">ref</text>
+            <text class="lbl" x="10" y="89">method</text><text class="lbl-sm" x="204" y="89" text-anchor="end">enum</text>
+            <text class="lbl" x="10" y="106">provider_reference</text><text class="lbl-sm" x="204" y="106" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="123">amount</text>
+            <text class="lbl" x="10" y="140">state</text><text class="lbl-sm" x="204" y="140" text-anchor="end">enum</text>
+            <text class="lbl" x="10" y="157">attempt_no</text>
+            <text class="lbl" x="10" y="174">next_attempt_at</text><text class="lbl-sm" x="204" y="174" text-anchor="end">IDX</text>
+            <text class="lbl" x="10" y="191">inventory_released</text>
+            <text class="lbl" x="10" y="208">version</text><text class="lbl-sm" x="204" y="208" text-anchor="end">opt-lock</text>
+          </g>
+
+          <g transform="translate(624,310)">
+            <rect class="box" x="0" y="0" width="214" height="168" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">refunds</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">refund_uid</text><text class="lbl-sm" x="204" y="55" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="72">booking_id</text><text class="lbl-sm" x="204" y="72" text-anchor="end">ref</text>
+            <text class="lbl" x="10" y="89">payment_id</text><text class="lbl-sm" x="204" y="89" text-anchor="end">ref</text>
+            <text class="lbl" x="10" y="106">amount</text>
+            <text class="lbl" x="10" y="123">policy_code</text>
+            <text class="lbl" x="10" y="140">state</text><text class="lbl-sm" x="204" y="140" text-anchor="end">enum</text>
+            <text class="lbl" x="10" y="157">version</text><text class="lbl-sm" x="204" y="157" text-anchor="end">opt-lock</text>
+          </g>
+
+          <g transform="translate(624,512)">
+            <rect class="box" x="0" y="0" width="214" height="151" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">reversals</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">reversal_uid</text><text class="lbl-sm" x="204" y="55" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="72">booking_id</text><text class="lbl-sm" x="204" y="72" text-anchor="end">ref</text>
+            <text class="lbl" x="10" y="89">payment_id</text><text class="lbl-sm" x="204" y="89" text-anchor="end">ref</text>
+            <text class="lbl" x="10" y="106">reason</text><text class="lbl-sm" x="204" y="106" text-anchor="end">enum</text>
+            <text class="lbl" x="10" y="123">amount</text>
+            <text class="lbl" x="10" y="140">state</text><text class="lbl-sm" x="204" y="140" text-anchor="end">enum</text>
+          </g>
+
+          <!-- ===== COLUMN D : audit ===== -->
+          <g transform="translate(918,54)">
+            <rect class="box" x="0" y="0" width="214" height="185" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">ledger_entries</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">ledger_entry_uid</text><text class="lbl-sm" x="204" y="55" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="72">booking_id</text><text class="lbl-sm" x="204" y="72" text-anchor="end">IDX</text>
+            <text class="lbl" x="10" y="89">payment_id</text><text class="lbl-sm" x="204" y="89" text-anchor="end">ref</text>
+            <text class="lbl" x="10" y="106">type</text><text class="lbl-sm" x="204" y="106" text-anchor="end">enum</text>
+            <text class="lbl" x="10" y="123">amount</text>
+            <text class="lbl" x="10" y="140">direction</text><text class="lbl-sm" x="204" y="140" text-anchor="end">enum</text>
+            <text class="lbl" x="10" y="157">occurred_at</text>
+            <text class="lbl" x="10" y="174">correlation_id</text>
+          </g>
+
+          <g transform="translate(918,272)">
+            <rect class="box" x="0" y="0" width="214" height="134" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">payment_status_checks</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">payment_id</text><text class="lbl-sm" x="204" y="55" text-anchor="end">ref</text>
+            <text class="lbl" x="10" y="72">attempt_no</text>
+            <text class="lbl" x="10" y="89">checked_at</text>
+            <text class="lbl" x="10" y="106">gateway_status</text><text class="lbl-sm" x="204" y="106" text-anchor="end">enum</text>
+            <text class="lbl" x="10" y="123">correlation_id</text>
+          </g>
+
+          <!-- ===== bottom band : no foreign keys ===== -->
+          <line class="hair" x1="624" y1="700" x2="1132" y2="700"/>
+          <text class="band" x="624" y="692">NO FOREIGN KEYS — INFRASTRUCTURE TABLES</text>
+
+          <g transform="translate(624,720)">
+            <rect class="box-sunk" x="0" y="0" width="214" height="134" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">idempotency_records</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">msg_id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">request_hash</text>
+            <text class="lbl" x="10" y="72">status</text><text class="lbl-sm" x="204" y="72" text-anchor="end">enum</text>
+            <text class="lbl" x="10" y="89">response_body</text>
+            <text class="lbl" x="10" y="106">created_at</text><text class="lbl-sm" x="204" y="106" text-anchor="end">IDX</text>
+            <text class="lbl" x="10" y="123">api_type</text>
+          </g>
+
+          <g transform="translate(918,720)">
+            <rect class="box-sunk" x="0" y="0" width="214" height="134" rx="2"/>
+            <text class="lbl-brass" x="10" y="16">webhook_event_log</text>
+            <line class="hair" x1="0" y1="24" x2="214" y2="24"/>
+            <text class="lbl" x="10" y="38">id</text><text class="lbl-sm" x="204" y="38" text-anchor="end">PK</text>
+            <text class="lbl" x="10" y="55">provider_code</text><text class="lbl-sm" x="204" y="55" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="72">event_id</text><text class="lbl-sm" x="204" y="72" text-anchor="end">UQ</text>
+            <text class="lbl" x="10" y="89">signature_valid</text>
+            <text class="lbl" x="10" y="106">outcome</text><text class="lbl-sm" x="204" y="106" text-anchor="end">enum</text>
+            <text class="lbl" x="10" y="123">received_at</text>
+          </g>
+
+          <text class="lbl-sm" x="624" y="880">The client's msgId dedupes a retried command;</text>
+          <text class="lbl-sm" x="624" y="896">(provider_code, event_id) dedupes a replayed callback.</text>
+          <text class="lbl-sm" x="918" y="880">Neither points at a booking: both must survive</text>
+          <text class="lbl-sm" x="918" y="896">a request that never created one.</text>
+
+          <!-- ===== connectors : real FKs (solid) ===== -->
+          <line class="fk" x1="143" y1="154" x2="143" y2="182" marker-end="url(#a-fk)"/>
+          <line class="fk" x1="143" y1="303" x2="143" y2="331" marker-end="url(#a-fk)"/>
+          <line class="fk" x1="143" y1="486" x2="143" y2="514" marker-end="url(#a-fk)"/>
+          <line class="fk" x1="437" y1="486" x2="437" y2="514" marker-end="url(#a-fk)"/>
+          <!-- properties -> property_amenities, routed left -->
+          <polyline class="fk" points="36,440 18,440 18,883 32,883" marker-end="url(#a-fk)"/>
+
+          <!-- ===== connectors : plain-id references (dashed) ===== -->
+          <!-- room_types <- daily_inventory -->
+          <line class="ref" x1="143" y1="684" x2="143" y2="656" marker-end="url(#a-ref)"/>
+          <!-- guests <- bookings.guest_id -->
+          <line class="ref" x1="437" y1="250" x2="437" y2="209" marker-end="url(#a-ref)"/>
+          <!-- bookings.property_id -> properties -->
+          <polyline class="ref" points="330,339 300,339 300,420 254,420" marker-end="url(#a-ref)"/>
+          <!-- bookings.room_type_id -> room_types -->
+          <polyline class="ref" points="330,356 282,356 282,585 254,585" marker-end="url(#a-ref)"/>
+          <!-- payments.booking_id -> bookings -->
+          <polyline class="ref" points="624,126 588,126 588,300 548,300" marker-end="url(#a-ref)"/>
+          <!-- refunds.payment_id -> payments (vertical) -->
+          <line class="ref" x1="731" y1="310" x2="731" y2="277" marker-end="url(#a-ref)"/>
+          <!-- reversals.payment_id -> payments (right channel) -->
+          <polyline class="ref" points="838,560 860,560 860,196 842,196" marker-end="url(#a-ref)"/>
+          <!-- ledger_entries.payment_id -> payments -->
+          <polyline class="ref" points="918,143 878,143 878,160 842,160" marker-end="url(#a-ref)"/>
+          <!-- payment_status_checks.payment_id -> payments -->
+          <polyline class="ref" points="918,327 896,327 896,232 842,232" marker-end="url(#a-ref)"/>
+        </svg>
+      </div>
+      <figcaption><b>Solid versus dashed is the point of this plate.</b> Only six edges are real foreign key
+        constraints — the ownership spine an owner creates, plus a booking's line items. Everything else is a
+        plain <code>Long</code> column holding an id with no database-level FK: <code>bookings</code>,
+        <code>payments</code>, <code>refunds</code>, <code>reversals</code> and the two audit tables all
+        reference by value. That is deliberate. The reservation path updates <code>daily_inventory</code> by
+        <code>room_type_id</code> without loading a <code>RoomType</code> entity, and the money tables are
+        append-oriented records that must outlive whatever they describe. Every money table also carries
+        <code>booking_id</code>; only the payment edge is drawn, to keep the plate readable.</figcaption>
+    </figure>
+
+    <div class="note"><b>Where the schema comes from.</b> There is no checked-in DDL driving the running app.
+      The JPA annotations are the single source of truth and Hibernate generates the schema from them, so this
+      plate and the database cannot drift apart. The hand-written MySQL DDL in the repository is a reference
+      artefact for the non-default profile, not the live schema.</div>
+  </section>
+
+  <!-- ============ CONSTRAINTS ============ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">The guarantees, by name</div>
+      <h2>What the database refuses to store</h2>
+      <p class="lede">Indexes make things fast and can be added later. The constraints below are different:
+        each one is a rule the application would otherwise have to be trusted to remember.</p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <caption>Constraints and indexes</caption>
+        <thead>
+          <tr><th>Name</th><th>Table</th><th>Kind</th><th>What it buys</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>ck_not_overbooked</code></td><td><code>daily_inventory</code></td>
+            <td><span class="tag tag-guard">CHECK</span></td>
+            <td class="why"><code>booked_units &lt;= total_units</code>. The last line of defence against a
+              double-booking, and the only one no application bug can route around.</td></tr>
+          <tr><td><code>uq_inventory_slot</code></td><td><code>daily_inventory</code></td>
+            <td><span class="tag tag-uq">UNIQUE</span></td>
+            <td class="why"><code>(room_type_id, stay_date)</code>. Makes "one row per room-night" structural,
+              so the horizon materialiser cannot create a duplicate night under load.</td></tr>
+          <tr><td><code>ck_non_negative</code></td><td><code>daily_inventory</code></td>
+            <td><span class="tag tag-guard">CHECK</span></td>
+            <td class="why"><code>booked_units &gt;= 0</code>. A double release is a bug worth surfacing;
+              silently driving the counter negative would be worse.</td></tr>
+          <tr><td><code>ck_price_positive</code></td><td><code>daily_inventory</code></td>
+            <td><span class="tag tag-guard">CHECK</span></td>
+            <td class="why"><code>price_per_unit &gt; 0</code>. No pricing strategy can write a free night.</td></tr>
+          <tr><td><code>uq_payment_provider_reference</code></td><td><code>payments</code></td>
+            <td><span class="tag tag-uq">UNIQUE</span></td>
+            <td class="why">The reference is stable across retries, so a retried initiate cannot become a
+              second charge.</td></tr>
+          <tr><td><code>uq_webhook_event</code></td><td><code>webhook_event_log</code></td>
+            <td><span class="tag tag-uq">UNIQUE</span></td>
+            <td class="why"><code>(provider_code, event_id)</code>. Gateways retry callbacks; a replayed
+              settlement must be recorded once and applied once.</td></tr>
+          <tr><td><code>msg_id</code> primary key</td><td><code>idempotency_records</code></td>
+            <td><span class="tag tag-uq">PK</span></td>
+            <td class="why">Two concurrent requests carrying the same message id race for this key. The loser
+              finds out at insert time, not at commit — before it has taken payment.</td></tr>
+          <tr><td><code>version</code></td><td><code>bookings</code> · <code>payments</code> · <code>refunds</code> · <code>reversals</code></td>
+            <td><span class="tag tag-guard">OPT-LOCK</span></td>
+            <td class="why">Optimistic locking on the mutable aggregates, so a sweeper and a user request
+              cannot both write a state transition over each other.</td></tr>
+          <tr><td><code>idx_inventory_lookup</code></td><td><code>daily_inventory</code></td>
+            <td><span class="tag tag-idx">INDEX</span></td>
+            <td class="why"><code>(room_type_id, stay_date)</code> — the reservation and availability read path.</td></tr>
+          <tr><td><code>idx_property_city_rating</code></td><td><code>properties</code></td>
+            <td><span class="tag tag-idx">INDEX</span></td>
+            <td class="why"><code>(city_normalised, star_rating)</code> — search matches the normalised column,
+              never display casing.</td></tr>
+          <tr><td><code>idx_payment_due</code></td><td><code>payments</code></td>
+            <td><span class="tag tag-idx">INDEX</span></td>
+            <td class="why"><code>(state, next_attempt_at)</code> — finds payments due for the next rung of the
+              status-check ladder without scanning.</td></tr>
+          <tr><td><code>idx_ledger_booking</code></td><td><code>ledger_entries</code></td>
+            <td><span class="tag tag-idx">INDEX</span></td>
+            <td class="why"><code>(booking_id, occurred_at)</code> — the per-booking money trail, in order.</td></tr>
+          <tr><td><code>idx_idempotency_created_at</code></td><td><code>idempotency_records</code></td>
+            <td><span class="tag tag-idx">INDEX</span></td>
+            <td class="why">Lets the sweeper bulk-delete expired records in one statement instead of loading
+              a growing table into memory.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ LIFECYCLE ============ -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">The <code>state</code> column, expanded</div>
+      <h2>Booking lifecycle</h2>
+      <p class="lede">Ten states, held in a table-driven state machine on the entity rather than scattered
+        across the services that call <code>transitionTo</code>. Four are terminal.</p>
+    </div>
+
+    <figure>
+      <div class="plate">
+        <svg viewBox="0 0 1120 330" style="min-width:920px" role="img"
+             aria-label="Booking state machine: CREATED to PENDING_PAYMENT to CONFIRMED, with PAYMENT_UNKNOWN and MANUAL_REVIEW resolution paths, and four terminal states — CANCELLED, COMPLETED, EXPIRED and REVERSED.">
+          <defs>
+            <marker id="a-st" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <polygon points="0,1 9,5 0,9" fill="var(--ink-3)"/>
+            </marker>
+          </defs>
+
+          <rect class="box" x="16" y="130" width="132" height="38" rx="2"/>
+          <text class="lbl-b" x="30" y="154">CREATED</text>
+
+          <rect class="box" x="196" y="130" width="164" height="38" rx="2"/>
+          <text class="lbl-b" x="210" y="154">PENDING_PAYMENT</text>
+
+          <rect class="box" x="408" y="52" width="164" height="38" rx="2"/>
+          <text class="lbl-b" x="422" y="76">PAYMENT_UNKNOWN</text>
+
+          <rect class="box" x="620" y="52" width="150" height="38" rx="2"/>
+          <text class="lbl-b" x="634" y="76">MANUAL_REVIEW</text>
+
+          <rect class="box-guard" x="408" y="130" width="132" height="38" rx="2"/>
+          <text class="lbl-b" x="422" y="154">CONFIRMED</text>
+
+          <rect class="box" x="408" y="212" width="150" height="38" rx="2"/>
+          <text class="lbl-b" x="422" y="236">PAYMENT_FAILED</text>
+
+          <!-- terminals -->
+          <text class="band" x="836" y="34">TERMINAL</text>
+          <rect class="box-sunk" x="836" y="46" width="132" height="36" rx="2"/>
+          <text class="lbl-b" x="850" y="69">COMPLETED</text>
+          <rect class="box-sunk" x="836" y="94" width="132" height="36" rx="2"/>
+          <text class="lbl-b" x="850" y="117">CANCELLED</text>
+          <rect class="box-sunk" x="836" y="142" width="132" height="36" rx="2"/>
+          <text class="lbl-b" x="850" y="165">REVERSED</text>
+          <rect class="box-sunk" x="836" y="190" width="132" height="36" rx="2"/>
+          <text class="lbl-b" x="850" y="213">EXPIRED</text>
+
+          <!-- edges -->
+          <line class="flow" x1="148" y1="149" x2="192" y2="149" marker-end="url(#a-st)"/>
+          <text class="lbl-sm" x="150" y="142">pay</text>
+
+          <polyline class="flow" points="360,142 384,142 384,71 404,71" marker-end="url(#a-st)"/>
+          <text class="lbl-sm" x="366" y="108">timeout</text>
+
+          <line class="flow" x1="360" y1="149" x2="404" y2="149" marker-end="url(#a-st)"/>
+          <text class="lbl-sm" x="360" y="166">settled</text>
+
+          <polyline class="flow" points="360,156 384,156 384,231 404,231" marker-end="url(#a-st)"/>
+          <text class="lbl-sm" x="366" y="200">declined</text>
+
+          <line class="flow" x1="572" y1="71" x2="616" y2="71" marker-end="url(#a-st)"/>
+          <text class="lbl-sm" x="572" y="64">ladder exhausted</text>
+
+          <polyline class="flow" points="490,90 490,126" marker-end="url(#a-st)"/>
+          <text class="lbl-sm" x="498" y="112">late success</text>
+
+          <polyline class="flow" points="694,90 694,300 566,300 566,254" marker-end="url(#a-st)"/>
+          <text class="lbl-sm" x="576" y="294">operator resolves → confirm or fail</text>
+
+          <line class="flow" x1="540" y1="140" x2="832" y2="64" marker-end="url(#a-st)"/>
+          <text class="lbl-sm" x="640" y="112">stay ends</text>
+
+          <line class="flow" x1="540" y1="152" x2="832" y2="112" marker-end="url(#a-st)"/>
+          <text class="lbl-sm" x="640" y="146">guest cancels → refund</text>
+
+          <line class="flow" x1="540" y1="162" x2="832" y2="160" marker-end="url(#a-st)"/>
+          <text class="lbl-sm" x="640" y="180">charge undone</text>
+
+          <polyline class="flow" points="558,240 700,240 700,208 832,208" marker-end="url(#a-st)"/>
+          <text class="lbl-sm" x="710" y="234">hold lapses</text>
+
+          <polyline class="flow" points="82,168 82,268 790,268 790,222 832,222" marker-end="url(#a-st)"/>
+          <text class="lbl-sm" x="92" y="262">hold TTL 15m elapses before payment — sweeper releases every night</text>
+        </svg>
+      </div>
+      <figcaption><b>Payment outcome drives booking state.</b> A settlement confirms; a decline fails; a
+        timeout parks the booking in <code>PAYMENT_UNKNOWN</code> rather than guessing, and an escalating
+        status-check ladder resolves it — to <code>CONFIRMED</code> if the charge landed late, to
+        <code>MANUAL_REVIEW</code> if the ladder runs out. A late success against an already-expired hold is
+        reversed rather than honoured, which is why <code>REVERSED</code> exists as a distinct terminal state
+        instead of being folded into <code>CANCELLED</code>.</figcaption>
+    </figure>
+  </section>
+
+  <footer>
+    <span>Java 21 · Spring Boot 4.1.1 · H2 in-memory</span>
+    <span>16 tables · 14 ports · 268 tests</span>
+    <span>Drawn from the code at HEAD</span>
+  </footer>
+
+</div>
+</body>
+</html>

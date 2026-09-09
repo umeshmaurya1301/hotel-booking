@@ -14,9 +14,9 @@ import com.umesh.hotelbooking.exception.InvalidRequestException;
 import com.umesh.hotelbooking.exception.OwnerNotFoundException;
 import com.umesh.hotelbooking.exception.PropertyGroupNotFoundException;
 import com.umesh.hotelbooking.exception.PropertyNotFoundException;
-import com.umesh.hotelbooking.repository.OwnerRepository;
-import com.umesh.hotelbooking.repository.PropertyGroupRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
+import com.umesh.hotelbooking.repository.OwnerStore;
+import com.umesh.hotelbooking.repository.PropertyGroupStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,26 +37,26 @@ import java.util.LinkedHashSet;
 @Service
 public class PropertyOnboardingService {
 
-    private final OwnerRepository ownerRepository;
-    private final PropertyGroupRepository propertyGroupRepository;
-    private final PropertyRepository propertyRepository;
+    private final OwnerStore ownerStore;
+    private final PropertyGroupStore propertyGroupStore;
+    private final PropertyStore propertyStore;
     private final InventoryMaterializer inventoryMaterializer;
     private final PricingStrategyRegistry pricingStrategyRegistry;
     private final InventoryProperties inventoryProperties;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
-    public PropertyOnboardingService(OwnerRepository ownerRepository,
-                                     PropertyGroupRepository propertyGroupRepository,
-                                     PropertyRepository propertyRepository,
+    public PropertyOnboardingService(OwnerStore ownerStore,
+                                     PropertyGroupStore propertyGroupStore,
+                                     PropertyStore propertyStore,
                                      InventoryMaterializer inventoryMaterializer,
                                      PricingStrategyRegistry pricingStrategyRegistry,
                                      InventoryProperties inventoryProperties,
                                      ApplicationEventPublisher eventPublisher,
                                      Clock clock) {
-        this.ownerRepository = ownerRepository;
-        this.propertyGroupRepository = propertyGroupRepository;
-        this.propertyRepository = propertyRepository;
+        this.ownerStore = ownerStore;
+        this.propertyGroupStore = propertyGroupStore;
+        this.propertyStore = propertyStore;
         this.inventoryMaterializer = inventoryMaterializer;
         this.pricingStrategyRegistry = pricingStrategyRegistry;
         this.inventoryProperties = inventoryProperties;
@@ -81,7 +81,7 @@ public class PropertyOnboardingService {
         for (RoomTypeRequest roomTypeRequest : request.roomTypes()) {
             property.addRoomType(buildRoomType(roomTypeRequest));
         }
-        Property saved = propertyRepository.save(property);
+        Property saved = propertyStore.save(property);
 
         int nightsMaterialised = materialiseOpeningHorizon(saved, zone, request.pricingStrategyCode());
 
@@ -98,7 +98,7 @@ public class PropertyOnboardingService {
 
     @Transactional
     public PropertyResponse update(String propertyUid, UpdatePropertyRequest request) {
-        Property property = propertyRepository.findByPropertyUid(propertyUid)
+        Property property = propertyStore.findByPropertyUid(propertyUid)
                 .orElseThrow(() -> new PropertyNotFoundException(propertyUid));
 
         if (request.name() != null) {
@@ -118,7 +118,7 @@ public class PropertyOnboardingService {
 
     @Transactional(readOnly = true)
     public PropertyResponse findByUid(String propertyUid) {
-        return PropertyResponse.from(propertyRepository.findByPropertyUid(propertyUid)
+        return PropertyResponse.from(propertyStore.findByPropertyUid(propertyUid)
                 .orElseThrow(() -> new PropertyNotFoundException(propertyUid)));
     }
 
@@ -129,13 +129,13 @@ public class PropertyOnboardingService {
      */
     private Owner resolveOwner(OnboardPropertyRequest request) {
         if (request.ownerUid() != null && !request.ownerUid().isBlank()) {
-            return ownerRepository.findByOwnerUid(request.ownerUid())
+            return ownerStore.findByOwnerUid(request.ownerUid())
                     .orElseThrow(() -> new OwnerNotFoundException(request.ownerUid()));
         }
         if (request.ownerName() == null || request.ownerName().isBlank()) {
             throw new InvalidRequestException("either ownerUid or ownerName must be supplied");
         }
-        return ownerRepository.save(Owner.builder()
+        return ownerStore.save(Owner.builder()
                 .name(request.ownerName())
                 .email(request.ownerEmail())
                 .build());
@@ -152,13 +152,13 @@ public class PropertyOnboardingService {
      */
     private PropertyGroup resolveGroup(OnboardPropertyRequest request, Owner owner) {
         if (request.propertyGroupUid() != null && !request.propertyGroupUid().isBlank()) {
-            return propertyGroupRepository.findByPropertyGroupUid(request.propertyGroupUid())
+            return propertyGroupStore.findByPropertyGroupUid(request.propertyGroupUid())
                     .orElseThrow(() -> new PropertyGroupNotFoundException(request.propertyGroupUid()));
         }
         String groupName = (request.propertyGroupName() == null || request.propertyGroupName().isBlank())
                 ? request.name()
                 : request.propertyGroupName();
-        return propertyGroupRepository.save(PropertyGroup.builder()
+        return propertyGroupStore.save(PropertyGroup.builder()
                 .name(groupName)
                 .owner(owner)
                 .settlementBankCode(request.settlementBankCode())

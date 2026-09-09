@@ -5,8 +5,8 @@ import com.umesh.hotelbooking.dto.CreateBookingRequest;
 import com.umesh.hotelbooking.dto.SweepResponse;
 import com.umesh.hotelbooking.entity.Booking;
 import com.umesh.hotelbooking.entity.BookingState;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,9 +57,9 @@ class BookingSweeperTest extends AbstractBookingConcurrencyTestSupport {
     @Autowired
     private BookingSweeper bookingSweeper;
     @Autowired
-    private BookingRepository bookingRepository;
+    private BookingStore bookingStore;
     @Autowired
-    private DailyInventoryRepository dailyInventoryRepository;
+    private DailyInventoryStore dailyInventoryStore;
     @Autowired
     private Clock clock;
 
@@ -75,7 +75,7 @@ class BookingSweeperTest extends AbstractBookingConcurrencyTestSupport {
      */
     @BeforeEach
     void clearBookings() {
-        bookingRepository.deleteAll();
+        bookingStore.deleteAll();
     }
 
     @Test
@@ -244,18 +244,18 @@ class BookingSweeperTest extends AbstractBookingConcurrencyTestSupport {
 
     /** Drives the booking through the state machine the way payment will in the next phase. */
     private void confirm(BookingResponse response) {
-        Booking booking = bookingRepository.findByBookingUid(response.bookingUid()).orElseThrow();
+        Booking booking = bookingStore.findByBookingUid(response.bookingUid()).orElseThrow();
         booking.transitionTo(BookingState.PENDING_PAYMENT);
         booking.transitionTo(BookingState.CONFIRMED);
-        bookingRepository.save(booking);
+        bookingStore.save(booking);
     }
 
     private BookingState state(BookingResponse response) {
-        return bookingRepository.findByBookingUid(response.bookingUid()).orElseThrow().getState();
+        return bookingStore.findByBookingUid(response.bookingUid()).orElseThrow().getState();
     }
 
     private int bookedUnits(Fixture fixture, LocalDate night) {
-        return dailyInventoryRepository.findByRoomTypeIdAndStayDate(fixture.roomTypeId(), night)
+        return dailyInventoryStore.findByRoomTypeIdAndStayDate(fixture.roomTypeId(), night)
                 .orElseThrow().getBookedUnits();
     }
 }

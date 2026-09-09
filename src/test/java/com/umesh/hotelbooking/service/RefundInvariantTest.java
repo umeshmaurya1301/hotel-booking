@@ -1,16 +1,19 @@
 package com.umesh.hotelbooking.service;
 
+import com.umesh.hotelbooking.config.FieldEncryptionConfig;
 import com.umesh.hotelbooking.entity.Booking;
 import com.umesh.hotelbooking.entity.EntryType;
 import com.umesh.hotelbooking.entity.Payment;
 import com.umesh.hotelbooking.entity.Refund;
 import com.umesh.hotelbooking.entity.Reversal;
 import com.umesh.hotelbooking.exception.RefundExceedsChargeException;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.LedgerEntryRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.LedgerEntryStore;
+import com.umesh.hotelbooking.repository.jpa.JpaStores;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -24,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * 15.1 test 8, design doc 9.4's invariant: {@code sum(REFUND) + sum(REVERSAL) <= sum(CHARGE)}
  * per booking, checked before a debit is written, never repaired after the fact.
  *
- * <p>{@code @DataJpaTest} gives a real {@link LedgerEntryRepository} against real H2, so the
+ * <p>{@code @DataJpaTest} gives a real {@link LedgerEntryStore} against real H2, so the
  * running-total query ({@code sumAmountByBookingIdAndType}) is genuinely exercised rather than
  * stubbed — a mocked repository could not distinguish a real accumulating balance check from a
  * bug that only ever compares against the single most recent refund. {@code Booking} and
@@ -33,20 +36,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Javadoc), so nothing here needs a real booking or payment row to exist.
  */
 @DataJpaTest
+@Import({FieldEncryptionConfig.class, JpaStores.class})
 class RefundInvariantTest {
 
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-09-08T00:00:00Z"), ZoneOffset.UTC);
 
     @Autowired
-    private LedgerEntryRepository ledgerEntryRepository;
+    private LedgerEntryStore ledgerEntryStore;
     @Autowired
-    private BookingRepository bookingRepository;
+    private BookingStore bookingStore;
 
     private LedgerService ledgerService;
 
     private LedgerService ledgerService() {
         if (ledgerService == null) {
-            ledgerService = new LedgerService(ledgerEntryRepository, bookingRepository, CLOCK);
+            ledgerService = new LedgerService(ledgerEntryStore, bookingStore, CLOCK);
         }
         return ledgerService;
     }
@@ -74,7 +78,7 @@ class RefundInvariantTest {
         ledgerService().assertWithinInvariant(booking, new BigDecimal("400.00"));
         ledgerService().recordRefund(refund(1L, 1L, new BigDecimal("400.00")), "corr-1");
 
-        assertThat(ledgerEntryRepository.findByBookingIdOrderByOccurredAtAsc(1L))
+        assertThat(ledgerEntryStore.findByBookingIdOrderByOccurredAtAsc(1L))
                 .extracting(entry -> entry.getType())
                 .containsExactly(EntryType.CHARGE, EntryType.REFUND);
     }
@@ -87,7 +91,7 @@ class RefundInvariantTest {
         assertThatThrownBy(() -> ledgerService().assertWithinInvariant(booking, new BigDecimal("1200.00")))
                 .isInstanceOf(RefundExceedsChargeException.class);
 
-        assertThat(ledgerEntryRepository.findByBookingIdOrderByOccurredAtAsc(2L))
+        assertThat(ledgerEntryStore.findByBookingIdOrderByOccurredAtAsc(2L))
                 .as("rejected must mean nothing was written, not just that the amount was wrong")
                 .extracting(entry -> entry.getType())
                 .containsExactly(EntryType.CHARGE);
@@ -110,7 +114,7 @@ class RefundInvariantTest {
         assertThatThrownBy(() -> ledgerService().assertWithinInvariant(booking, new BigDecimal("500.00")))
                 .isInstanceOf(RefundExceedsChargeException.class);
 
-        assertThat(ledgerEntryRepository.findByBookingIdOrderByOccurredAtAsc(3L))
+        assertThat(ledgerEntryStore.findByBookingIdOrderByOccurredAtAsc(3L))
                 .extracting(entry -> entry.getType())
                 .containsExactly(EntryType.CHARGE, EntryType.REFUND);
     }

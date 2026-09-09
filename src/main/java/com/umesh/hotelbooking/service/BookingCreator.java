@@ -18,11 +18,11 @@ import com.umesh.hotelbooking.exception.GuestNotFoundException;
 import com.umesh.hotelbooking.exception.InventoryUnavailableException;
 import com.umesh.hotelbooking.exception.PropertyNotFoundException;
 import com.umesh.hotelbooking.exception.RoomTypeNotFoundException;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
-import com.umesh.hotelbooking.repository.GuestRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
+import com.umesh.hotelbooking.repository.GuestStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import com.umesh.hotelbooking.web.RequestMeta;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -48,32 +48,32 @@ import java.util.Map;
 @Service
 public class BookingCreator {
 
-    private final RoomTypeRepository roomTypeRepository;
-    private final PropertyRepository propertyRepository;
-    private final GuestRepository guestRepository;
-    private final BookingRepository bookingRepository;
-    private final DailyInventoryRepository dailyInventoryRepository;
+    private final RoomTypeStore roomTypeStore;
+    private final PropertyStore propertyStore;
+    private final GuestStore guestStore;
+    private final BookingStore bookingStore;
+    private final DailyInventoryStore dailyInventoryStore;
     private final InventoryReservationService reservationService;
     private final BookingProperties bookingProperties;
     private final ApplicationEventPublisher eventPublisher;
     private final IdempotencyService idempotencyService;
     private final Clock clock;
 
-    public BookingCreator(RoomTypeRepository roomTypeRepository,
-                          PropertyRepository propertyRepository,
-                          GuestRepository guestRepository,
-                          BookingRepository bookingRepository,
-                          DailyInventoryRepository dailyInventoryRepository,
+    public BookingCreator(RoomTypeStore roomTypeStore,
+                          PropertyStore propertyStore,
+                          GuestStore guestStore,
+                          BookingStore bookingStore,
+                          DailyInventoryStore dailyInventoryStore,
                           InventoryReservationService reservationService,
                           BookingProperties bookingProperties,
                           ApplicationEventPublisher eventPublisher,
                           IdempotencyService idempotencyService,
                           Clock clock) {
-        this.roomTypeRepository = roomTypeRepository;
-        this.propertyRepository = propertyRepository;
-        this.guestRepository = guestRepository;
-        this.bookingRepository = bookingRepository;
-        this.dailyInventoryRepository = dailyInventoryRepository;
+        this.roomTypeStore = roomTypeStore;
+        this.propertyStore = propertyStore;
+        this.guestStore = guestStore;
+        this.bookingStore = bookingStore;
+        this.dailyInventoryStore = dailyInventoryStore;
         this.reservationService = reservationService;
         this.bookingProperties = bookingProperties;
         this.eventPublisher = eventPublisher;
@@ -94,9 +94,9 @@ public class BookingCreator {
             return cached.get();
         }
 
-        RoomType roomType = roomTypeRepository.findByRoomTypeUid(request.roomTypeUid())
+        RoomType roomType = roomTypeStore.findByRoomTypeUid(request.roomTypeUid())
                 .orElseThrow(() -> new RoomTypeNotFoundException(request.roomTypeUid()));
-        Property property = propertyRepository.findById(roomType.getProperty().getId())
+        Property property = propertyStore.findById(roomType.getProperty().getId())
                 .orElseThrow(() -> new PropertyNotFoundException("for room type " + request.roomTypeUid()));
         Guest guest = resolveGuest(request.guestUid(), request.guest());
 
@@ -144,7 +144,7 @@ public class BookingCreator {
         }
         booking.setTotalAmount(total);
 
-        Booking saved = bookingRepository.save(booking);
+        Booking saved = bookingStore.save(booking);
 
         eventPublisher.publishEvent(new BookingCreatedEvent(
                 saved.getBookingUid(), property.getPropertyUid(), roomType.getRoomTypeUid(),
@@ -157,12 +157,12 @@ public class BookingCreator {
 
     @Transactional(readOnly = true)
     public BookingResponse find(String bookingUid) {
-        Booking booking = bookingRepository.findByBookingUid(bookingUid)
+        Booking booking = bookingStore.findByBookingUid(bookingUid)
                 .orElseThrow(() -> new BookingNotFoundException(bookingUid));
         return toResponse(booking,
-                guestRepository.findById(booking.getGuestId()).map(Guest::getGuestUid).orElse(null),
-                propertyRepository.findById(booking.getPropertyId()).map(Property::getPropertyUid).orElse(null),
-                roomTypeRepository.findById(booking.getRoomTypeId()).map(RoomType::getRoomTypeUid).orElse(null));
+                guestStore.findById(booking.getGuestId()).map(Guest::getGuestUid).orElse(null),
+                propertyStore.findById(booking.getPropertyId()).map(Property::getPropertyUid).orElse(null),
+                roomTypeStore.findById(booking.getRoomTypeId()).map(RoomType::getRoomTypeUid).orElse(null));
     }
 
     private BookingResponse toResponse(Booking booking, String guestUid, String propertyUid, String roomTypeUid) {
@@ -190,9 +190,9 @@ public class BookingCreator {
                         .address(details.address())
                         .dateOfBirth(details.dateOfBirth());
             }
-            return guestRepository.save(builder.build());
+            return guestStore.save(builder.build());
         }
-        return guestRepository.findByGuestUid(guestUid)
+        return guestStore.findByGuestUid(guestUid)
                 .orElseThrow(() -> new GuestNotFoundException(guestUid));
     }
 
@@ -215,7 +215,7 @@ public class BookingCreator {
      * horizon is not bookable, and from a guest's point of view that is simply unavailable.
      */
     private Map<LocalDate, DailyInventory> loadInventory(RoomType roomType, List<LocalDate> nights, String roomTypeUid) {
-        List<DailyInventory> rows = dailyInventoryRepository.findByRoomTypeIdAndStayDateBetween(
+        List<DailyInventory> rows = dailyInventoryStore.findByRoomTypeIdAndStayDateBetween(
                 roomType.getId(), nights.get(0), nights.get(nights.size() - 1));
 
         Map<LocalDate, DailyInventory> byNight = new HashMap<>(rows.size());

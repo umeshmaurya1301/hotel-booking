@@ -3,7 +3,7 @@ package com.umesh.hotelbooking.service;
 import com.umesh.hotelbooking.dto.CreateBookingRequest;
 import com.umesh.hotelbooking.entity.DailyInventory;
 import com.umesh.hotelbooking.exception.InventoryUnavailableException;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -47,7 +47,7 @@ class InventoryReservationConcurrencyTest extends AbstractBookingConcurrencyTest
     @Autowired
     private BookingService bookingService;
     @Autowired
-    private DailyInventoryRepository dailyInventoryRepository;
+    private DailyInventoryStore dailyInventoryStore;
 
     /**
      * The single most valuable test in the project: 20 threads race for the last unit on one
@@ -201,7 +201,7 @@ class InventoryReservationConcurrencyTest extends AbstractBookingConcurrencyTest
 
         assertThat(result.unexpected()).as("%s", result.unexpectedMessages()).isEmpty();
 
-        List<DailyInventory> rows = dailyInventoryRepository.findByRoomTypeIdAndStayDateBetween(
+        List<DailyInventory> rows = dailyInventoryStore.findByRoomTypeIdAndStayDateBetween(
                 fixture.roomTypeId(), d1, d1.plusDays(6));
         for (DailyInventory row : rows) {
             assertThat(row.getBookedUnits())
@@ -211,7 +211,7 @@ class InventoryReservationConcurrencyTest extends AbstractBookingConcurrencyTest
     }
 
     private DailyInventory inventory(Long roomTypeId, LocalDate night) {
-        return dailyInventoryRepository.findByRoomTypeIdAndStayDate(roomTypeId, night).orElseThrow();
+        return dailyInventoryStore.findByRoomTypeIdAndStayDate(roomTypeId, night).orElseThrow();
     }
 
     /**

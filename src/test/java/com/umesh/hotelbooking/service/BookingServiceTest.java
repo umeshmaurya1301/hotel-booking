@@ -10,7 +10,7 @@ import com.umesh.hotelbooking.exception.GuestNotFoundException;
 import com.umesh.hotelbooking.exception.InvalidDateRangeException;
 import com.umesh.hotelbooking.exception.InventoryUnavailableException;
 import com.umesh.hotelbooking.exception.RoomTypeNotFoundException;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -34,7 +34,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
     @Autowired
     private InventoryAdminService inventoryAdminService;
     @Autowired
-    private DailyInventoryRepository dailyInventoryRepository;
+    private DailyInventoryStore dailyInventoryStore;
 
     @Test
     void aBookingHoldsOneLineItemPerNightAndTotalsThem() {
@@ -79,7 +79,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
             assertThat(item.lineTotal()).isEqualByComparingTo("16000.00");
         });
         assertThat(booking.totalAmount()).isEqualByComparingTo("48000.00");
-        assertThat(dailyInventoryRepository
+        assertThat(dailyInventoryStore
                 .findByRoomTypeIdAndStayDate(fixture.roomTypeId(), checkIn).orElseThrow()
                 .getBookedUnits()).isEqualTo(2);
     }
@@ -169,7 +169,7 @@ class BookingServiceTest extends AbstractBookingConcurrencyTestSupport {
                 null, fixture.roomTypeUid(), day, day, 1, 1, 0, null)))
                 .isInstanceOf(InvalidDateRangeException.class);
 
-        assertThat(dailyInventoryRepository
+        assertThat(dailyInventoryStore
                 .findByRoomTypeIdAndStayDate(fixture.roomTypeId(), day).orElseThrow()
                 .getBookedUnits())
                 .as("a rejected request must not have reserved anything")

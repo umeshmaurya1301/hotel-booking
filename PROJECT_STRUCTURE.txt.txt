@@ -1271,9 +1271,8 @@ Not in the rubric. Added last, only if tests and README are complete.
 
 
 16.1 Where the build has actually reached
-Phases 0 through 9 are built; only the explicitly-optional Phase 10 extras (Swagger/OpenAPI,
-AES field encryption, Docker — gated on Phase 9 being complete, which it now is) remain
-unbuilt. What exists today: the scaffold and entity core (0/1, as revised in 0.1); onboarding, inventory
+Every planned phase is built: 0 through 9, plus the optional Phase 10 extras. Nothing in the
+implementation plan of 17 remains outstanding. What exists today: the scaffold and entity core (0/1, as revised in 0.1); onboarding, inventory
 materialisation and pricing (2) — the ownership hierarchy including the group-of-one rule,
 per-night DailyInventory rows with the check constraints of 5.2.4 layer 3 enforced by the
 database, three pricing strategies behind a registry, the eager bounded-horizon materialiser,
@@ -1325,8 +1324,14 @@ document's own 18 specifies, a committed and verified MySQL reference profile
 (application-mysql.yml, schema-mysql.sql), IdempotencyRecordSweeper closing the
 payment.idempotency.retention gap, and the final sweep (gradlew's executable bit, the
 package-info gaps in controller.admin/advice/user, and a stale Payment.createdAt/updatedAt gap
-in Instant.now() usage - see 16.8 for the full account of what that phase's own tests found).
-What is not: only the explicitly-optional Phase 10 extras.
+in Instant.now() usage - see 16.8 for the full account of what that phase's own tests found);
+and, as of Phase 10, the three optional extras in 17's own order - OpenAPI/Swagger UI via
+springdoc (with OpenApiConfig correcting a generated document that was wrong about both the
+response envelope and two 201s, see 16.9), AES-GCM field encryption at rest on every Guest PII
+column (with the column widening and the DATE-to-VARCHAR change that forced), and a verified
+multi-stage Dockerfile running as a non-root user on the same in-memory H2 the default profile
+uses. What is not built: nothing that was planned. The remaining gaps are the ones 16's own
+table names as deliberate exclusions, plus key rotation for the encryption added above.
 Two structural notes on what phase 2 added beyond the tree in 2.3: controllers are grouped
 by caller (controller.admin, controller.user, controller.webhook, controller.advice) as
 11.4 requires, and a minimal GlobalExceptionHandler mapping error codes to HTTP status was
@@ -1810,6 +1815,10 @@ refund() call, and a second test confirms a refund the gateway rejects (GatewayO
 still leaves that release standing and the booking CANCELLED - the booking's fate and the
 room's availability are decided independently of whether money has actually moved back yet,
 exactly as CancellationService's own Javadoc claims.
+[Corrected in 16.9: this claim was true of the runs it describes but incomplete - the test was
+later found to allow only one of the two legitimate ways the payment can lose the race, and
+failed on a heavily loaded machine during Phase 10. The product behaviour it describes below
+was and is correct; the test was not.]
 SweeperPaymentRaceTest was not flaky: fifteen iterations (the task spec's own 10-20 guidance),
 each a fresh property/booking pair raced with a CountDownLatch exactly as
 InventoryReservationConcurrencyTest already does, passed cleanly on the first run with no
@@ -1846,6 +1855,115 @@ dispute.
 Nothing found in this phase is believed wrong for Phase 10. Phase 10's own scope
 (Swagger/OpenAPI, AES field encryption, Docker) is explicitly gated on tests and README being
 complete first, which this phase's own work is what makes true.
+
+16.9 Phase 10 findings
+The de-risking question first, because Phase 0 was burned by exactly this once already:
+springdoc-openapi does exist for Spring Boot 4, unlike resilience4j-spring-boot4 (16.2). The
+3.x line is the Boot 4 line - 3.1.1 was the current release - and its own POM depends on
+spring-boot-tomcat, spring-boot-health and spring-boot-starter-webmvc-test, which are Boot 4
+module names, so the compatibility question was answerable before writing a line of code. No
+hand-written stand-in was needed this time.
+It does, however, drag Jackson 2 onto a Jackson 3 classpath: swagger-core-jakarta 2.2.55 pulls
+com.fasterxml.jackson.core 2.21.x, while this application runs on tools.jackson 3.1.5. Both
+coexist without conflict only because Jackson 3's package rename is what it is - the two never
+collide at the class level, and the shared jackson-annotations artifact means DTO annotations
+are still read correctly by Swagger's schema generator. It is worth knowing rather than
+discovering: adding API documentation to this project doubles the number of Jackson major
+versions on its runtime classpath, and a future dependency conflict there would be confusing
+without this note.
+The real finding is that the document springdoc generates out of the box is wrong for this
+application in two ways, both of which would break a generated client rather than merely
+inconvenience a reader. First, every controller.admin/controller.user method returns a bare
+DTO and ResponseEnvelopeAdvice adds the ApiResponse envelope afterwards, at a layer springdoc
+cannot see - so POST /api/v1/user/bookings was documented as returning BookingResponse when a
+client actually receives it nested under "data". Second, that same endpoint and the property
+onboarding endpoint both genuinely return 201 but set it inside a ResponseEntity, which is
+runtime code rather than metadata, so both were documented as plain 200s. The envelope is now
+applied by an OperationCustomizer scoped to the same two base packages ResponseEnvelopeAdvice
+itself is scoped to - deliberately not by annotating twenty controller methods, which would be
+a second copy of "which endpoints are enveloped" free to drift from the first, the same class
+of drift 16.8 recorded. The status codes were fixed at the source instead: both methods now
+declare @ResponseStatus(HttpStatus.CREATED) and return the plain DTO, which is behaviourally
+identical (verified live: still 201, still enveloped), introspectable, and incidentally matches
+how every other controller in this codebase is already written. OpenApiDocumentTest asserts the
+enveloped shape, the 201s, the deliberately-unenveloped webhook response and the documented
+X-Role header, so none of it can quietly regress.
+AES field encryption turned out to have a consequence worth recording, because it is not
+obvious from the feature description: encrypting a column that an entity mapping depends on
+makes the cipher a prerequisite of the persistence layer itself, not merely of the code that
+reads a guest. Guest's PII columns carry @Convert, so Hibernate must construct
+EncryptedStringConverter - with its FieldCipher dependency - before it can build the
+EntityManagerFactory at all. The first full-suite run after wiring it up failed twenty tests
+across six @DataJpaTest slices, almost none of which touch a Guest: BookingRepositoryTest,
+DailyInventoryConstraintTest, AvailabilityFilterTest, SearchPropertyLocalDateTest,
+IdempotencyRecordSweeperTest and RefundInvariantTest all failed to start their slice. Component
+scanning covers the full application context but not a slice, which is what made this visible
+only in tests. Resolved by grouping the three beans into FieldEncryptionConfig so each slice
+needs one @Import rather than three plus an @EnableConfigurationProperties. A static holder
+would have avoided the imports entirely and was rejected on principle: this project states
+plainly that every singleton in it is a Spring-managed bean and never a hand-rolled
+getInstance(), and a mutable static holding a cipher is precisely the shape that rule exists to
+exclude. The imports are the honest, visible cost.
+Two further encryption consequences, both accepted deliberately rather than worked around. The
+columns had to be widened a long way - an encrypted value is roughly 4*ceil((28 + utf8Bytes)/3)
++ 3 characters once the 12-byte IV, 16-byte GCM tag, Base64 encoding and version prefix are
+accounted for, so address went from VARCHAR(300) to VARCHAR(2048) and phone from VARCHAR(20) to
+VARCHAR(256); GuestDetails' own @Size limits are what keep those bounds computable rather than
+arbitrary. And date_of_birth stopped being a SQL DATE, becoming ciphertext in a VARCHAR: it can
+no longer be range-queried or compared in SQL. Nothing in this system ever did either to that
+column, which is exactly what makes encrypting it defensible and what would make the same
+treatment indefensible on bookings.check_in. schema-mysql.sql was updated in the same change
+rather than later, since a reference schema that no longer matches the entities is the specific
+failure 16.8 had just finished fixing.
+Encryption at rest and the 12.6.4 masking layer compose correctly, which was verified live
+rather than assumed: a guest booked through the running application with real-looking details
+comes back from the admin lookup as "A*** M****" / "a***@example.com" / "*****3210" - decrypted
+correctly from storage by the converter, then masked on the way out by @Sensitive. The two
+layers answer different questions (who can read the database file, versus who can read an API
+response) and neither substitutes for the other. Erasure is a third, still-separate concern and
+is unchanged: GuestRedactionService still really overwrites the plaintext, so crypto-shredding
+remains rejected for the reason the README already gives.
+Docker built and ran, verified rather than asserted: the image builds from the committed
+multi-stage Dockerfile, the container starts, /actuator/health reports UP, the API and Swagger
+UI both answer through it, Docker's own HEALTHCHECK transitions to healthy, and the process
+runs as uid 10001 rather than root. One honest note on the process: the Docker daemon was not
+running when this phase started, so it had to be started to verify any of this - which also
+started several unrelated containers on the machine that had restart policies set. The image is
+~580MB, almost all of it the Temurin JRE base plus the 65MB fat jar; a jlink runtime or Boot's
+layered-jar extraction would shrink it, and neither was done because nothing here is waiting on
+image size. No Compose file and no MySQL service were added, deliberately: 13.1's argument that
+requiring a database to be stood up first is reviewer friction does not stop applying just
+because there is now a container to put one in.
+The most useful thing this phase found was not in anything it built: the full-suite run on a
+machine now also running Docker and eight unrelated containers failed SweeperPaymentRaceTest,
+which 16.8 had recorded as "not flaky" after fifteen clean iterations. The failure was a defect
+in that test, not in the product, and the distinction matters. There are two legitimate ways
+the payment thread can lose the sweeper race: it reads the booking while still payable, then
+loses at commit (OptimisticLockingFailureException), or the sweeper commits EXPIRED before the
+payment reads the booking at all, in which case requirePayableBookingState rejects it up front
+with InvalidPaymentStateException. The test only tolerated the first and treated the second as
+an unexpected failure. Every invariant it actually exists to protect - exactly one of
+expired-or-confirmed, inventory released exactly once, never a CONFIRMED booking with released
+inventory - held in the failing run. Outcome two is arguably the better product behaviour of
+the two, failing fast with a precise domain error rather than doing work that is already
+doomed. Fixed by accepting both losing paths and, while there, tightening the assertion in the
+other direction: when the sweeper wins, the payment must have failed somehow, since a payment
+silently succeeding against an EXPIRED booking is the corruption this test is really looking
+for. Sixty further iterations across four forced re-runs pass. The lesson is the one 19's risk
+register already states for deadlock ("load-dependent, so it is covered by a repeated-run
+concurrency test") applied one level up: repeated runs on an idle machine explore a narrower
+set of interleavings than the same test under real contention, and a race test that has only
+ever passed can still be encoding an incomplete picture of what passing means.
+An initial draft of the HEALTHCHECK in this phase was simply wrong - it invoked "java -e",
+which is not a thing, and mixed exec-form CMD with shell redirection - and would have left
+every container permanently unhealthy while the application underneath was fine. It was caught
+by writing it out and reading it rather than by any tool, and replaced with a curl call against
+the actuator endpoint the application already exposes (curl being the one package the runtime
+stage installs). Recorded here because a health check that silently never passes is the kind of
+defect that survives a long time: nothing fails, a dashboard just quietly stays red.
+Nothing found in this phase is believed wrong for anything that follows it. Phase 10 was the
+last of the planned phases; 17.1's "never cut" list is intact, and the three optional extras
+this phase covers were the only outstanding items in 16.1.
 
 17. Implementation Plan
 Phase 1 — Entity core (highest rubric weight; revised mid-course, see 0.1)

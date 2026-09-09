@@ -49,6 +49,6 @@ public record OnboardPropertyRequest(
         String currency,
         Set<Amenity> amenities,
 
-        @NotEmpty @Valid List<RoomTypeRequest> roomTypes,
+        @NotEmpty List<@Valid RoomTypeRequest> roomTypes,
         String pricingStrategyCode) {
 }

@@ -2,6 +2,7 @@ package com.umesh.hotelbooking.webhook;
 
 import com.umesh.hotelbooking.crypto.HmacSigner;
 import com.umesh.hotelbooking.service.MutableClock;
+import com.umesh.hotelbooking.repository.WebhookEventLogStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -55,7 +56,7 @@ class InboundWebhookVerificationTest {
     @Autowired
     private HmacSigner signer;
     @Autowired
-    private WebhookEventLogRepository logRepository;
+    private WebhookEventLogStore logStore;
     @Autowired
     private Clock clock;
 
@@ -86,7 +87,7 @@ class InboundWebhookVerificationTest {
                 .andExpect(jsonPath("$.eventId").value(eventId))
                 .andExpect(jsonPath("$.status").value("RECEIVED"));
 
-        Optional<WebhookEventLog> row = logRepository.findByProviderCodeAndEventId("MOCK_CARD", eventId);
+        Optional<WebhookEventLog> row = logStore.findByProviderCodeAndEventId("MOCK_CARD", eventId);
         assertThat(row).isPresent();
         assertThat(row.get().isSignatureValid()).isTrue();
         // The referenced payment does not exist in this test, so processing itself fails —
@@ -110,7 +111,7 @@ class InboundWebhookVerificationTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.status").value("REJECTED"));
 
-        Optional<WebhookEventLog> row = logRepository.findByProviderCodeAndEventId("MOCK_CARD", eventId);
+        Optional<WebhookEventLog> row = logStore.findByProviderCodeAndEventId("MOCK_CARD", eventId);
         assertThat(row).isPresent();
         assertThat(row.get().isSignatureValid()).isFalse();
         assertThat(row.get().getOutcome()).isEqualTo(WebhookOutcome.SIGNATURE_INVALID);
@@ -144,7 +145,7 @@ class InboundWebhookVerificationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RECEIVED"));
 
-        Optional<WebhookEventLog> row = logRepository.findByProviderCodeAndEventId("MOCK_CARD", eventId);
+        Optional<WebhookEventLog> row = logStore.findByProviderCodeAndEventId("MOCK_CARD", eventId);
         assertThat(row).isPresent();
         assertThat(row.get().getOutcome()).isEqualTo(WebhookOutcome.UNKNOWN_EVENT_TYPE);
     }

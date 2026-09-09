@@ -3,7 +3,7 @@ package com.umesh.hotelbooking.service;
 import com.umesh.hotelbooking.dto.CreateBookingRequest;
 import com.umesh.hotelbooking.entity.DailyInventory;
 import com.umesh.hotelbooking.exception.InventoryUnavailableException;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -46,7 +46,7 @@ class ReservationWithoutInJvmLockTest extends AbstractBookingConcurrencyTestSupp
     @Autowired
     private BookingService bookingService;
     @Autowired
-    private DailyInventoryRepository dailyInventoryRepository;
+    private DailyInventoryStore dailyInventoryStore;
     @Autowired
     private InventoryLockRegistry lockRegistry;
 
@@ -96,7 +96,7 @@ class ReservationWithoutInJvmLockTest extends AbstractBookingConcurrencyTestSupp
         assertThat(unavailable.get()).isEqualTo(threads - 1);
         assertThat(unexpected).as("%s", unexpected).isEmpty();
 
-        DailyInventory row = dailyInventoryRepository
+        DailyInventory row = dailyInventoryStore
                 .findByRoomTypeIdAndStayDate(fixture.roomTypeId(), night).orElseThrow();
         assertThat(row.getBookedUnits()).isEqualTo(1);
 

@@ -144,10 +144,6 @@ public class Payment {
         this.nextAttemptAt = now.plus(firstDelay);
     }
 
-    public boolean isDueForCheck(Instant now) {
-        return state == PaymentState.UNKNOWN && nextAttemptAt != null && !nextAttemptAt.isAfter(now);
-    }
-
     public boolean hasExceededDeadline(Instant now, java.time.Duration deadline) {
         return unknownSince != null && now.isAfter(unknownSince.plus(deadline));
     }

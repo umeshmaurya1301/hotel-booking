@@ -5,8 +5,8 @@ import com.umesh.hotelbooking.dto.PropertyResponse;
 import com.umesh.hotelbooking.dto.RoomTypeRequest;
 import com.umesh.hotelbooking.entity.Property;
 import com.umesh.hotelbooking.entity.RoomType;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import com.umesh.hotelbooking.web.ApiType;
 import com.umesh.hotelbooking.web.RequestMeta;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,9 +29,9 @@ abstract class AbstractBookingConcurrencyTestSupport {
     @Autowired
     private PropertyOnboardingService onboardingService;
     @Autowired
-    private PropertyRepository propertyRepository;
+    private PropertyStore propertyStore;
     @Autowired
-    private RoomTypeRepository roomTypeRepository;
+    private RoomTypeStore roomTypeStore;
     @Autowired
     private Clock clock;
 
@@ -49,8 +49,8 @@ abstract class AbstractBookingConcurrencyTestSupport {
                 List.of(new RoomTypeRequest("Deluxe King", totalUnits, 4, new BigDecimal("8000.00"))),
                 null));
 
-        Property property = propertyRepository.findByPropertyUid(response.propertyUid()).orElseThrow();
-        RoomType roomType = roomTypeRepository.findByPropertyId(property.getId()).get(0);
+        Property property = propertyStore.findByPropertyUid(response.propertyUid()).orElseThrow();
+        RoomType roomType = roomTypeStore.findByPropertyId(property.getId()).get(0);
 
         // Materialisation starts at the property's local today (design doc 4.5).
         LocalDate firstNight = LocalDate.now(clock.withZone(property.zone()));

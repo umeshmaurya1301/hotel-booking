@@ -11,8 +11,8 @@ import com.umesh.hotelbooking.entity.Refund;
 import com.umesh.hotelbooking.entity.Reversal;
 import com.umesh.hotelbooking.exception.BookingNotFoundException;
 import com.umesh.hotelbooking.exception.RefundExceedsChargeException;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.LedgerEntryRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.LedgerEntryStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,13 +36,13 @@ import java.util.List;
 @Service
 public class LedgerService {
 
-    private final LedgerEntryRepository repository;
-    private final BookingRepository bookingRepository;
+    private final LedgerEntryStore store;
+    private final BookingStore bookingStore;
     private final Clock clock;
 
-    public LedgerService(LedgerEntryRepository repository, BookingRepository bookingRepository, Clock clock) {
-        this.repository = repository;
-        this.bookingRepository = bookingRepository;
+    public LedgerService(LedgerEntryStore store, BookingStore bookingStore, Clock clock) {
+        this.store = store;
+        this.bookingStore = bookingStore;
         this.clock = clock;
     }
 
@@ -58,9 +58,9 @@ public class LedgerService {
     }
 
     public BigDecimal remainingBalance(Long bookingId) {
-        BigDecimal charged = repository.sumAmountByBookingIdAndType(bookingId, EntryType.CHARGE);
-        BigDecimal refunded = repository.sumAmountByBookingIdAndType(bookingId, EntryType.REFUND);
-        BigDecimal reversed = repository.sumAmountByBookingIdAndType(bookingId, EntryType.REVERSAL);
+        BigDecimal charged = store.sumAmountByBookingIdAndType(bookingId, EntryType.CHARGE);
+        BigDecimal refunded = store.sumAmountByBookingIdAndType(bookingId, EntryType.REFUND);
+        BigDecimal reversed = store.sumAmountByBookingIdAndType(bookingId, EntryType.REVERSAL);
         return charged.subtract(refunded).subtract(reversed);
     }
 
@@ -86,19 +86,19 @@ public class LedgerService {
 
     @Transactional(readOnly = true)
     public List<LedgerEntry> findByBooking(Long bookingId) {
-        return repository.findByBookingIdOrderByOccurredAtAsc(bookingId);
+        return store.findByBookingIdOrderByOccurredAtAsc(bookingId);
     }
 
     /** GET /api/v1/admin/ledger?bookingUid=. */
     @Transactional(readOnly = true)
     public LedgerViewResponse viewByBookingUid(String bookingUid) {
-        Booking booking = bookingRepository.findByBookingUid(bookingUid)
+        Booking booking = bookingStore.findByBookingUid(bookingUid)
                 .orElseThrow(() -> new BookingNotFoundException(bookingUid));
         List<LedgerEntry> entries = findByBooking(booking.getId());
 
-        BigDecimal charged = repository.sumAmountByBookingIdAndType(booking.getId(), EntryType.CHARGE);
-        BigDecimal refunded = repository.sumAmountByBookingIdAndType(booking.getId(), EntryType.REFUND);
-        BigDecimal reversed = repository.sumAmountByBookingIdAndType(booking.getId(), EntryType.REVERSAL);
+        BigDecimal charged = store.sumAmountByBookingIdAndType(booking.getId(), EntryType.CHARGE);
+        BigDecimal refunded = store.sumAmountByBookingIdAndType(booking.getId(), EntryType.REFUND);
+        BigDecimal reversed = store.sumAmountByBookingIdAndType(booking.getId(), EntryType.REVERSAL);
 
         return new LedgerViewResponse(
                 bookingUid,
@@ -109,7 +109,7 @@ public class LedgerService {
 
     private LedgerEntry append(Long bookingId, Long paymentId, EntryType type, BigDecimal amount, String currency,
                                Direction direction, String providerReference, String correlationId) {
-        return repository.save(LedgerEntry.builder()
+        return store.save(LedgerEntry.builder()
                 .bookingId(bookingId)
                 .paymentId(paymentId)
                 .type(type)

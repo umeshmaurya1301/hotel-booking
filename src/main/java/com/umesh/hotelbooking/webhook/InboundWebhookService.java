@@ -4,6 +4,7 @@ import com.umesh.hotelbooking.crypto.SignatureVerificationException;
 import com.umesh.hotelbooking.crypto.SignatureVerifier;
 import com.umesh.hotelbooking.security.PayloadRedactor;
 import com.umesh.hotelbooking.service.PaymentSettlementService;
+import com.umesh.hotelbooking.repository.WebhookEventLogStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -36,20 +37,20 @@ public class InboundWebhookService {
 
     private static final Logger log = LoggerFactory.getLogger(InboundWebhookService.class);
 
-    private final WebhookEventLogRepository logRepository;
+    private final WebhookEventLogStore logStore;
     private final SignatureVerifier signatureVerifier;
     private final PayloadRedactor payloadRedactor;
     private final PaymentSettlementService settlementService;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
-    public InboundWebhookService(WebhookEventLogRepository logRepository,
+    public InboundWebhookService(WebhookEventLogStore logStore,
                                  SignatureVerifier signatureVerifier,
                                  PayloadRedactor payloadRedactor,
                                  PaymentSettlementService settlementService,
                                  ObjectMapper objectMapper,
                                  Clock clock) {
-        this.logRepository = logRepository;
+        this.logStore = logStore;
         this.signatureVerifier = signatureVerifier;
         this.payloadRedactor = payloadRedactor;
         this.settlementService = settlementService;
@@ -76,7 +77,7 @@ public class InboundWebhookService {
         }
 
         // 2. eventId not already seen — cheap, so it runs before the more expensive HMAC step.
-        if (logRepository.existsByProviderCodeAndEventId(providerCode, parsed.eventId())) {
+        if (logStore.existsByProviderCodeAndEventId(providerCode, parsed.eventId())) {
             return new WebhookAck(parsed.eventId(), "DUPLICATE");
         }
 
@@ -161,17 +162,17 @@ public class InboundWebhookService {
                 .receivedAt(now)
                 .build();
         try {
-            return logRepository.saveAndFlush(entity);
+            return logStore.saveAndFlush(entity);
         } catch (DataIntegrityViolationException e) {
             return null;
         }
     }
 
     private void updateOutcome(Long id, WebhookOutcome outcome, Instant processedAt) {
-        logRepository.findById(id).ifPresent(row -> {
+        logStore.findById(id).ifPresent(row -> {
             row.setOutcome(outcome);
             row.setProcessedAt(processedAt);
-            logRepository.save(row);
+            logStore.save(row);
         });
     }
 

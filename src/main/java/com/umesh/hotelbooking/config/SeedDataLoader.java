@@ -7,9 +7,9 @@ import com.umesh.hotelbooking.entity.Amenity;
 import com.umesh.hotelbooking.entity.DailyInventory;
 import com.umesh.hotelbooking.entity.Property;
 import com.umesh.hotelbooking.entity.RoomType;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import com.umesh.hotelbooking.service.PropertyOnboardingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,25 +46,25 @@ public class SeedDataLoader implements ApplicationRunner {
     private static final String ZONE = "Asia/Kolkata";
 
     private final PropertyOnboardingService onboardingService;
-    private final PropertyRepository propertyRepository;
-    private final RoomTypeRepository roomTypeRepository;
-    private final DailyInventoryRepository dailyInventoryRepository;
+    private final PropertyStore propertyStore;
+    private final RoomTypeStore roomTypeStore;
+    private final DailyInventoryStore dailyInventoryStore;
     private final Clock clock;
 
-    public SeedDataLoader(PropertyOnboardingService onboardingService, PropertyRepository propertyRepository,
-                          RoomTypeRepository roomTypeRepository, DailyInventoryRepository dailyInventoryRepository,
+    public SeedDataLoader(PropertyOnboardingService onboardingService, PropertyStore propertyStore,
+                          RoomTypeStore roomTypeStore, DailyInventoryStore dailyInventoryStore,
                           Clock clock) {
         this.onboardingService = onboardingService;
-        this.propertyRepository = propertyRepository;
-        this.roomTypeRepository = roomTypeRepository;
-        this.dailyInventoryRepository = dailyInventoryRepository;
+        this.propertyStore = propertyStore;
+        this.roomTypeStore = roomTypeStore;
+        this.dailyInventoryStore = dailyInventoryStore;
         this.clock = clock;
     }
 
     @Override
     public void run(ApplicationArguments args) {
-        if (propertyRepository.count() > 0) {
-            log.info("Seed data skipped: {} properties already present", propertyRepository.count());
+        if (propertyStore.count() > 0) {
+            log.info("Seed data skipped: {} properties already present", propertyStore.count());
             return;
         }
 
@@ -144,7 +144,7 @@ public class SeedDataLoader implements ApplicationRunner {
 
         fullyBookOneNight(anjuna, "Beachfront Villa");
 
-        log.info("Seed data loaded: {} properties", propertyRepository.count());
+        log.info("Seed data loaded: {} properties", propertyStore.count());
     }
 
     /**
@@ -166,18 +166,18 @@ public class SeedDataLoader implements ApplicationRunner {
      * regardless.
      */
     void fullyBookOneNight(PropertyResponse property, String roomTypeName) {
-        Property entity = propertyRepository.findByPropertyUid(property.propertyUid()).orElseThrow();
-        RoomType roomType = roomTypeRepository.findByPropertyId(entity.getId()).stream()
+        Property entity = propertyStore.findByPropertyUid(property.propertyUid()).orElseThrow();
+        RoomType roomType = roomTypeStore.findByPropertyId(entity.getId()).stream()
                 .filter(rt -> rt.getName().equals(roomTypeName))
                 .findFirst().orElseThrow();
 
         LocalDate propertyToday = LocalDate.now(clock.withZone(entity.zone()));
         LocalDate targetNight = propertyToday.plusDays(1);
 
-        DailyInventory row = dailyInventoryRepository
+        DailyInventory row = dailyInventoryStore
                 .findByRoomTypeIdAndStayDate(roomType.getId(), targetNight).orElseThrow();
         row.setBookedUnits(row.getTotalUnits());
-        dailyInventoryRepository.save(row);
+        dailyInventoryStore.save(row);
     }
 
     private OnboardPropertyRequest chainProperty(String name, String city, String locality, int stars,

@@ -14,9 +14,9 @@ import com.umesh.hotelbooking.exception.InvalidRequestException;
 import com.umesh.hotelbooking.exception.InventoryNotMaterialisedException;
 import com.umesh.hotelbooking.exception.PropertyNotFoundException;
 import com.umesh.hotelbooking.exception.RoomTypeNotFoundException;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,24 +31,24 @@ import java.util.List;
 @Service
 public class InventoryAdminService {
 
-    private final PropertyRepository propertyRepository;
-    private final RoomTypeRepository roomTypeRepository;
-    private final DailyInventoryRepository dailyInventoryRepository;
+    private final PropertyStore propertyStore;
+    private final RoomTypeStore roomTypeStore;
+    private final DailyInventoryStore dailyInventoryStore;
     private final InventoryMaterializer inventoryMaterializer;
     private final PricingStrategyRegistry pricingStrategyRegistry;
     private final InventoryProperties inventoryProperties;
     private final Clock clock;
 
-    public InventoryAdminService(PropertyRepository propertyRepository,
-                                 RoomTypeRepository roomTypeRepository,
-                                 DailyInventoryRepository dailyInventoryRepository,
+    public InventoryAdminService(PropertyStore propertyStore,
+                                 RoomTypeStore roomTypeStore,
+                                 DailyInventoryStore dailyInventoryStore,
                                  InventoryMaterializer inventoryMaterializer,
                                  PricingStrategyRegistry pricingStrategyRegistry,
                                  InventoryProperties inventoryProperties,
                                  Clock clock) {
-        this.propertyRepository = propertyRepository;
-        this.roomTypeRepository = roomTypeRepository;
-        this.dailyInventoryRepository = dailyInventoryRepository;
+        this.propertyStore = propertyStore;
+        this.roomTypeStore = roomTypeStore;
+        this.dailyInventoryStore = dailyInventoryStore;
         this.inventoryMaterializer = inventoryMaterializer;
         this.pricingStrategyRegistry = pricingStrategyRegistry;
         this.inventoryProperties = inventoryProperties;
@@ -82,7 +82,7 @@ public class InventoryAdminService {
             LocalDate horizonEnd = today.plusDays(horizonDays);
             lastHorizonEnd = horizonEnd;
 
-            for (RoomType roomType : roomTypeRepository.findByPropertyId(property.getId())) {
+            for (RoomType roomType : roomTypeStore.findByPropertyId(property.getId())) {
                 roomTypesTouched++;
                 nightsCreated += inventoryMaterializer.materialise(
                         roomType, property.getCurrency(), today, horizonEnd, strategy);
@@ -107,7 +107,7 @@ public class InventoryAdminService {
         RoomType roomType = requireRoomType(request.roomTypeUid());
         PricingStrategy strategy = pricingStrategyRegistry.resolve(request.strategyCode());
 
-        List<DailyInventory> rows = dailyInventoryRepository
+        List<DailyInventory> rows = dailyInventoryStore
                 .findByRoomTypeIdAndStayDateBetween(roomType.getId(), request.from(), request.to());
 
         for (DailyInventory row : rows) {
@@ -133,7 +133,7 @@ public class InventoryAdminService {
         }
         RoomType roomType = requireRoomType(roomTypeUid);
 
-        DailyInventory row = dailyInventoryRepository
+        DailyInventory row = dailyInventoryStore
                 .findByRoomTypeIdAndStayDate(roomType.getId(), request.stayDate())
                 .orElseThrow(() -> new InventoryNotMaterialisedException(roomTypeUid, request.stayDate()));
 
@@ -159,7 +159,7 @@ public class InventoryAdminService {
             throw new InvalidRequestException("'to' must not be before 'from'");
         }
         RoomType roomType = requireRoomType(roomTypeUid);
-        return dailyInventoryRepository.findByRoomTypeIdAndStayDateBetween(roomType.getId(), from, to)
+        return dailyInventoryStore.findByRoomTypeIdAndStayDateBetween(roomType.getId(), from, to)
                 .stream()
                 .map(InventoryResponse::from)
                 .toList();
@@ -167,14 +167,14 @@ public class InventoryAdminService {
 
     private List<Property> resolveProperties(String propertyUid) {
         if (propertyUid == null || propertyUid.isBlank()) {
-            return propertyRepository.findAll();
+            return propertyStore.findAll();
         }
-        return List.of(propertyRepository.findByPropertyUid(propertyUid)
+        return List.of(propertyStore.findByPropertyUid(propertyUid)
                 .orElseThrow(() -> new PropertyNotFoundException(propertyUid)));
     }
 
     private RoomType requireRoomType(String roomTypeUid) {
-        return roomTypeRepository.findByRoomTypeUid(roomTypeUid)
+        return roomTypeStore.findByRoomTypeUid(roomTypeUid)
                 .orElseThrow(() -> new RoomTypeNotFoundException(roomTypeUid));
     }
 }

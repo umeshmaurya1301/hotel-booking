@@ -1,0 +1,15 @@
+# Keeps the build context small and the build reproducible. build/ in particular is ~65MB of
+# jars and test reports that the image build regenerates from source anyway — copying it in
+# would slow every build and risk a stale jar being picked up by the wildcard COPY.
+build/
+.gradle/
+.git/
+.idea/
+*.iml
+bin/
+out/
+
+# Not needed to build or run the application.
+README.md
+PROJECT_STRUCTURE.txt.txt
+*.md

@@ -15,10 +15,10 @@ import com.umesh.hotelbooking.gateway.PaymentGatewayProvider;
 import com.umesh.hotelbooking.gateway.PaymentGatewayRouter;
 import com.umesh.hotelbooking.gateway.RefundRequest;
 import com.umesh.hotelbooking.gateway.RefundResult;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.PaymentRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RefundRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.PaymentStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RefundStore;
 import com.umesh.hotelbooking.web.ApiType;
 import com.umesh.hotelbooking.web.RequestMeta;
 import org.junit.jupiter.api.Test;
@@ -54,10 +54,10 @@ class CancellationOrderingTest {
 
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-09-08T00:00:00Z"), ZoneOffset.UTC);
 
-    private BookingRepository bookingRepository;
-    private PropertyRepository propertyRepository;
-    private PaymentRepository paymentRepository;
-    private RefundRepository refundRepository;
+    private BookingStore bookingStore;
+    private PropertyStore propertyStore;
+    private PaymentStore paymentStore;
+    private RefundStore refundStore;
     private LedgerService ledgerService;
     private InventoryReservationService reservationService;
     private PaymentGatewayRouter router;
@@ -69,10 +69,10 @@ class CancellationOrderingTest {
     private Booking booking;
 
     private void setUp(GatewayOutcome refundOutcome) {
-        bookingRepository = mock(BookingRepository.class);
-        propertyRepository = mock(PropertyRepository.class);
-        paymentRepository = mock(PaymentRepository.class);
-        refundRepository = mock(RefundRepository.class);
+        bookingStore = mock(BookingStore.class);
+        propertyStore = mock(PropertyStore.class);
+        paymentStore = mock(PaymentStore.class);
+        refundStore = mock(RefundStore.class);
         ledgerService = mock(LedgerService.class);
         reservationService = mock(InventoryReservationService.class);
         router = mock(PaymentGatewayRouter.class);
@@ -98,12 +98,12 @@ class CancellationOrderingTest {
 
         when(idempotencyService.begin(any(RequestMeta.class), any(), eq(CancellationResponse.class)))
                 .thenReturn(Optional.empty());
-        when(bookingRepository.findByBookingUid("bk-1")).thenReturn(Optional.of(booking));
-        when(paymentRepository.findByBookingId(1L)).thenReturn(List.of(settledPayment));
-        when(propertyRepository.findById(10L)).thenReturn(Optional.of(property));
+        when(bookingStore.findByBookingUid("bk-1")).thenReturn(Optional.of(booking));
+        when(paymentStore.findByBookingId(1L)).thenReturn(List.of(settledPayment));
+        when(propertyStore.findById(10L)).thenReturn(Optional.of(property));
         // Mirrors the real repository's @PrePersist: a hand-built Refund never went through
         // JPA's own lifecycle callback, so its state would otherwise stay null.
-        when(refundRepository.save(any())).thenAnswer(invocation -> {
+        when(refundStore.save(any())).thenAnswer(invocation -> {
             Refund refund = invocation.getArgument(0);
             if (refund.getState() == null) {
                 refund.setState(RefundState.REQUESTED);
@@ -117,8 +117,8 @@ class CancellationOrderingTest {
         when(provider.refund(any(RefundRequest.class)))
                 .thenReturn(new RefundResult(refundOutcome, "rfnd-ref", "message"));
 
-        cancellationService = new CancellationService(bookingRepository, propertyRepository, paymentRepository,
-                refundRepository, new RefundPolicyFactory(List.of(new FullRefundBefore48Hours())), ledgerService,
+        cancellationService = new CancellationService(bookingStore, propertyStore, paymentStore,
+                refundStore, new RefundPolicyFactory(List.of(new FullRefundBefore48Hours())), ledgerService,
                 reservationService, router, idempotencyService, eventPublisher, CLOCK);
     }
 

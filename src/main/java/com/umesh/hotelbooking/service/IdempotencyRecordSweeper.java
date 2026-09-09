@@ -1,7 +1,7 @@
 package com.umesh.hotelbooking.service;
 
 import com.umesh.hotelbooking.config.IdempotencyProperties;
-import com.umesh.hotelbooking.repository.IdempotencyRecordRepository;
+import com.umesh.hotelbooking.repository.IdempotencyRecordStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -12,11 +12,11 @@ import java.time.Instant;
 
 /**
  * Evicts idempotency records older than {@code payment.idempotency.retention} (design doc 8a).
- * {@link IdempotencyRecordRepository} previously exposed only a finder for this — sat unused
+ * {@link IdempotencyRecordStore} previously exposed only a finder for this — sat unused
  * since Phase 4, since nothing ever called it — and unbounded growth on a dedupe table is
  * exactly the "real production problem" that record's own retention field was always meant to
  * guard against (see PROJECT_STRUCTURE.txt.txt 16.8). That dead finder is gone, replaced by
- * {@link IdempotencyRecordRepository#deleteByCreatedAtBefore}, a genuine bulk delete.
+ * {@link IdempotencyRecordStore#deleteByCreatedAtBefore}, a genuine bulk delete.
  *
  * <p>Separate from {@link IdempotencyRecordSweeperScheduler}, matching {@code BookingSweeper}
  * and {@code BookingSweeperScheduler}'s own split: a test can invoke {@link #sweep()} directly
@@ -29,13 +29,13 @@ public class IdempotencyRecordSweeper {
 
     private static final Logger log = LoggerFactory.getLogger(IdempotencyRecordSweeper.class);
 
-    private final IdempotencyRecordRepository repository;
+    private final IdempotencyRecordStore store;
     private final IdempotencyProperties properties;
     private final Clock clock;
 
-    public IdempotencyRecordSweeper(IdempotencyRecordRepository repository, IdempotencyProperties properties,
+    public IdempotencyRecordSweeper(IdempotencyRecordStore store, IdempotencyProperties properties,
                                     Clock clock) {
-        this.repository = repository;
+        this.store = store;
         this.properties = properties;
         this.clock = clock;
     }
@@ -44,7 +44,7 @@ public class IdempotencyRecordSweeper {
     @Transactional
     public int sweep() {
         Instant cutoff = Instant.now(clock).minus(properties.retention());
-        int deleted = repository.deleteByCreatedAtBefore(cutoff);
+        int deleted = store.deleteByCreatedAtBefore(cutoff);
         // An eviction job that runs silently is one nobody notices has stopped.
         if (deleted > 0) {
             log.info("Idempotency record sweep: deleted {} record(s) older than {}", deleted, cutoff);

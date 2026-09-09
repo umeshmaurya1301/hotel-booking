@@ -20,9 +20,9 @@ import com.umesh.hotelbooking.gateway.PaymentGatewayClient;
 import com.umesh.hotelbooking.gateway.PaymentGatewayProvider;
 import com.umesh.hotelbooking.gateway.PaymentGatewayRouter;
 import com.umesh.hotelbooking.gateway.PaymentResult;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.PaymentRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.PaymentStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
 import com.umesh.hotelbooking.web.RequestMeta;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,9 +48,9 @@ public class PaymentService {
     private static final Set<PaymentState> ACTIVE_ATTEMPT_STATES =
             Set.of(PaymentState.INITIATED, PaymentState.PROCESSING, PaymentState.UNKNOWN, PaymentState.MANUAL_REVIEW);
 
-    private final BookingRepository bookingRepository;
-    private final PropertyRepository propertyRepository;
-    private final PaymentRepository paymentRepository;
+    private final BookingStore bookingStore;
+    private final PropertyStore propertyStore;
+    private final PaymentStore paymentStore;
     private final PaymentGatewayRouter router;
     private final PaymentGatewayClient gatewayClient;
     private final PaymentCircuitBreaker circuitBreaker;
@@ -59,9 +59,9 @@ public class PaymentService {
     private final LedgerService ledgerService;
     private final Clock clock;
 
-    public PaymentService(BookingRepository bookingRepository,
-                          PropertyRepository propertyRepository,
-                          PaymentRepository paymentRepository,
+    public PaymentService(BookingStore bookingStore,
+                          PropertyStore propertyStore,
+                          PaymentStore paymentStore,
                           PaymentGatewayRouter router,
                           PaymentGatewayClient gatewayClient,
                           PaymentCircuitBreaker circuitBreaker,
@@ -69,9 +69,9 @@ public class PaymentService {
                           IdempotencyService idempotencyService,
                           LedgerService ledgerService,
                           Clock clock) {
-        this.bookingRepository = bookingRepository;
-        this.propertyRepository = propertyRepository;
-        this.paymentRepository = paymentRepository;
+        this.bookingStore = bookingStore;
+        this.propertyStore = propertyStore;
+        this.paymentStore = paymentStore;
         this.router = router;
         this.gatewayClient = gatewayClient;
         this.circuitBreaker = circuitBreaker;
@@ -88,7 +88,7 @@ public class PaymentService {
             return cached.get();
         }
 
-        Booking booking = bookingRepository.findByBookingUid(bookingUid)
+        Booking booking = bookingStore.findByBookingUid(bookingUid)
                 .orElseThrow(() -> new BookingNotFoundException(bookingUid));
         requirePayableBookingState(booking);
         Payment payment = resolvePaymentAttempt(booking, request.method());
@@ -108,7 +108,7 @@ public class PaymentService {
 
     private PaymentResponse attemptGatewayCall(Booking booking, Payment payment, InitiatePaymentRequest request,
                                                String correlationId) {
-        Property property = propertyRepository.findById(booking.getPropertyId())
+        Property property = propertyStore.findById(booking.getPropertyId())
                 .orElseThrow(() -> new PropertyNotFoundException("for booking " + booking.getBookingUid()));
         String bankCode = property.getPropertyGroup().getSettlementBankCode();
 
@@ -121,7 +121,7 @@ public class PaymentService {
         if (booking.getState() == BookingState.CREATED) {
             booking.transitionTo(BookingState.PENDING_PAYMENT);
         }
-        Payment saved = paymentRepository.save(payment);
+        Payment saved = paymentStore.save(payment);
 
         PaymentRequest gatewayRequest = new PaymentRequest(
                 saved.getProviderReference(), request.method(), bankCode,
@@ -141,9 +141,9 @@ public class PaymentService {
 
     @Transactional(readOnly = true)
     public PaymentResponse find(String paymentUid) {
-        Payment payment = paymentRepository.findByPaymentUid(paymentUid)
+        Payment payment = paymentStore.findByPaymentUid(paymentUid)
                 .orElseThrow(() -> new PaymentNotFoundException(paymentUid));
-        String bookingUid = bookingRepository.findById(payment.getBookingId())
+        String bookingUid = bookingStore.findById(payment.getBookingId())
                 .map(Booking::getBookingUid).orElse(null);
         return PaymentResponse.from(payment, bookingUid);
     }
@@ -173,7 +173,7 @@ public class PaymentService {
      * whether to reuse an in-flight/unresolved attempt, reject outright, or start a new one.
      */
     private Payment resolvePaymentAttempt(Booking booking, PaymentMethod method) {
-        List<Payment> existing = paymentRepository.findByBookingId(booking.getId());
+        List<Payment> existing = paymentStore.findByBookingId(booking.getId());
         for (Payment candidate : existing) {
             if (candidate.getState() == PaymentState.SETTLED) {
                 throw new InvalidPaymentStateException(

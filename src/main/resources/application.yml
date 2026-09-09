@@ -62,15 +62,12 @@ booking:
     max-delay: 250ms
 
 payment:
-  gateway:
-    # Below the breaker's evaluation expectations (design doc 7.3): without a timeout, a
-    # hanging call never returns, the breaker never records a failure, and threads pile up.
-    call-timeout: 2s
-    bulkhead-limit: 5
-    retry:
-      max-attempts: 2
-      initial-delay: 50ms
-      max-delay: 300ms
+  # No `gateway:` block here. The bulkhead is @ConcurrencyLimit(5) on AbstractMockProvider and
+  # the retry is @Retryable on PaymentGatewayClient - both Spring annotations, both requiring
+  # compile-time constants, so neither can read a value from this file. A `payment.gateway.*`
+  # block bound to a @ConfigurationProperties record nothing injected used to sit here; it read
+  # like configuration and was decoration. Making those genuinely configurable means replacing
+  # the annotations with programmatic equivalents - a real change, not a YAML edit.
   circuit-breaker:
     # One breaker, wrapping only the payment gateway call - the only unreliable remote
     # dependency (7.1). Not per-provider: bulkhead isolates providers from each other,
@@ -132,6 +129,15 @@ api:
   version: v1
   correlation-header: X-Correlation-Id
   role-header: X-Role
+
+security:
+  encryption:
+    # AES-256 key for field-level encryption at rest on Guest's PII columns (design doc 12.6,
+    # Phase 10). A development placeholder and nothing more - exactly like the webhook provider
+    # secrets below: in production this comes from the environment or a secret manager, never
+    # from committed YAML. Rotating it makes existing rows undecryptable, which is why
+    # FieldCipher stamps a "v1:" version prefix rather than assuming one key forever.
+    key: ${ENCRYPTION_KEY:b64He55mmu7jU8z2XNEuO4+5xg5ssKEr7bEZ3xVDUZg=}
 
 webhook:
   inbound:

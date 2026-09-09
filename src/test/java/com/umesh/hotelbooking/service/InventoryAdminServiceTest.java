@@ -14,9 +14,9 @@ import com.umesh.hotelbooking.entity.Property;
 import com.umesh.hotelbooking.exception.InvalidRequestException;
 import com.umesh.hotelbooking.exception.InventoryNotMaterialisedException;
 import com.umesh.hotelbooking.exception.RoomTypeNotFoundException;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,11 +63,11 @@ class InventoryAdminServiceTest {
     @Autowired
     private InventoryAdminService inventoryAdminService;
     @Autowired
-    private PropertyRepository propertyRepository;
+    private PropertyStore propertyStore;
     @Autowired
-    private RoomTypeRepository roomTypeRepository;
+    private RoomTypeStore roomTypeStore;
     @Autowired
-    private DailyInventoryRepository dailyInventoryRepository;
+    private DailyInventoryStore dailyInventoryStore;
 
     private String propertyUid;
     private String roomTypeUid;
@@ -84,20 +84,20 @@ class InventoryAdminServiceTest {
         propertyUid = response.propertyUid();
         roomTypeUid = response.roomTypes().get(0).roomTypeUid();
 
-        Property property = propertyRepository.findByPropertyUid(propertyUid).orElseThrow();
-        roomTypeId = roomTypeRepository.findByPropertyId(property.getId()).get(0).getId();
+        Property property = propertyStore.findByPropertyUid(propertyUid).orElseThrow();
+        roomTypeId = roomTypeStore.findByPropertyId(property.getId()).get(0).getId();
     }
 
     @Test
     void extendingTheHorizonCreatesOnlyTheMissingNights() {
-        assertThat(dailyInventoryRepository.countByRoomTypeId(roomTypeId)).isEqualTo(5);
+        assertThat(dailyInventoryStore.countByRoomTypeId(roomTypeId)).isEqualTo(5);
 
         MaterialisationResponse response = inventoryAdminService.extendHorizon(
                 new ExtendHorizonRequest(propertyUid, 8, null));
 
         assertThat(response.nightsCreated()).isEqualTo(3);
         assertThat(response.roomTypesTouched()).isEqualTo(1);
-        assertThat(dailyInventoryRepository.countByRoomTypeId(roomTypeId)).isEqualTo(8);
+        assertThat(dailyInventoryStore.countByRoomTypeId(roomTypeId)).isEqualTo(8);
     }
 
     @Test
@@ -108,7 +108,7 @@ class InventoryAdminServiceTest {
                 new ExtendHorizonRequest(propertyUid, 8, null));
 
         assertThat(second.nightsCreated()).isZero();
-        assertThat(dailyInventoryRepository.countByRoomTypeId(roomTypeId)).isEqualTo(8);
+        assertThat(dailyInventoryStore.countByRoomTypeId(roomTypeId)).isEqualTo(8);
     }
 
     @Test
@@ -119,7 +119,7 @@ class InventoryAdminServiceTest {
 
         inventoryAdminService.extendHorizon(new ExtendHorizonRequest(propertyUid, 10, null));
 
-        DailyInventory overridden = dailyInventoryRepository
+        DailyInventory overridden = dailyInventoryStore
                 .findByRoomTypeIdAndStayDate(roomTypeId, FIRST_NIGHT).orElseThrow();
         assertThat(overridden.getPricePerUnit()).isEqualByComparingTo("25000.00");
     }
@@ -140,13 +140,13 @@ class InventoryAdminServiceTest {
     void repriceDoesNotCreateNightsBeyondTheHorizon() {
         // Repricing changes prices; extending creates nights. Conflating them would let a
         // typo'd date range silently materialise a year of inventory.
-        long before = dailyInventoryRepository.countByRoomTypeId(roomTypeId);
+        long before = dailyInventoryStore.countByRoomTypeId(roomTypeId);
 
         RepriceResponse response = inventoryAdminService.reprice(new RepriceRequest(
                 roomTypeUid, FIRST_NIGHT, FIRST_NIGHT.plusYears(1), "WEEKEND_SURGE"));
 
         assertThat(response.nightsRepriced()).isEqualTo((int) before);
-        assertThat(dailyInventoryRepository.countByRoomTypeId(roomTypeId)).isEqualTo(before);
+        assertThat(dailyInventoryStore.countByRoomTypeId(roomTypeId)).isEqualTo(before);
     }
 
     @Test
@@ -171,7 +171,7 @@ class InventoryAdminServiceTest {
         assertThat(priceOn(FIRST_NIGHT)).isEqualByComparingTo("25000.00");
         assertThat(priceOn(FIRST_NIGHT.plusDays(1))).isEqualByComparingTo("8000.00");
 
-        DailyInventory row = dailyInventoryRepository
+        DailyInventory row = dailyInventoryStore
                 .findByRoomTypeIdAndStayDate(roomTypeId, FIRST_NIGHT).orElseThrow();
         assertThat(row.getTotalUnits()).isEqualTo(5);
     }
@@ -186,10 +186,10 @@ class InventoryAdminServiceTest {
     @Test
     void overrideRejectsReducingUnitsBelowWhatIsAlreadyBooked() {
         // Turn a clean constraint violation into an answer the operator can act on.
-        DailyInventory row = dailyInventoryRepository
+        DailyInventory row = dailyInventoryStore
                 .findByRoomTypeIdAndStayDate(roomTypeId, FIRST_NIGHT).orElseThrow();
         row.setBookedUnits(6);
-        dailyInventoryRepository.saveAndFlush(row);
+        dailyInventoryStore.saveAndFlush(row);
 
         assertThatThrownBy(() -> inventoryAdminService.overrideNight(roomTypeUid,
                 new RateOverrideRequest(FIRST_NIGHT, null, 4)))
@@ -214,7 +214,7 @@ class InventoryAdminServiceTest {
     }
 
     private BigDecimal priceOn(LocalDate date) {
-        return dailyInventoryRepository.findByRoomTypeIdAndStayDate(roomTypeId, date)
+        return dailyInventoryStore.findByRoomTypeIdAndStayDate(roomTypeId, date)
                 .orElseThrow().getPricePerUnit();
     }
 }

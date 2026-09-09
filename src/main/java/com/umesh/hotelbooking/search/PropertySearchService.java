@@ -6,7 +6,7 @@ import com.umesh.hotelbooking.dto.RoomTypeSearchResult;
 import com.umesh.hotelbooking.dto.SearchPropertiesRequest;
 import com.umesh.hotelbooking.dto.SearchResponse;
 import com.umesh.hotelbooking.entity.Property;
-import com.umesh.hotelbooking.repository.PropertyRepository;
+import com.umesh.hotelbooking.repository.PropertyStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -28,13 +28,13 @@ public class PropertySearchService {
 
     private static final Logger log = LoggerFactory.getLogger(PropertySearchService.class);
 
-    private final PropertyRepository propertyRepository;
+    private final PropertyStore propertyStore;
     private final SearchFilterChain filterChain;
     private final SearchProperties searchProperties;
 
-    public PropertySearchService(PropertyRepository propertyRepository, SearchFilterChain filterChain,
+    public PropertySearchService(PropertyStore propertyStore, SearchFilterChain filterChain,
                                  SearchProperties searchProperties) {
-        this.propertyRepository = propertyRepository;
+        this.propertyStore = propertyStore;
         this.filterChain = filterChain;
         this.searchProperties = searchProperties;
     }
@@ -49,7 +49,7 @@ public class PropertySearchService {
         SearchCriteria criteria = SearchCriteria.of(request);
 
         List<SearchCandidate> candidates = new ArrayList<>();
-        for (Property property : propertyRepository.findForSearchByCityNormalised(criteria.cityNormalised())) {
+        for (Property property : propertyStore.findForSearchByCityNormalised(criteria.cityNormalised())) {
             candidates.add(SearchCandidate.of(property));
         }
         int candidateCount = candidates.size();

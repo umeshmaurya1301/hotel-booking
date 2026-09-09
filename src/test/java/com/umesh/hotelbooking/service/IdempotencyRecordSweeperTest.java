@@ -1,12 +1,15 @@
 package com.umesh.hotelbooking.service;
 
+import com.umesh.hotelbooking.config.FieldEncryptionConfig;
 import com.umesh.hotelbooking.config.IdempotencyProperties;
 import com.umesh.hotelbooking.entity.IdempotencyRecord;
 import com.umesh.hotelbooking.entity.IdempotencyStatus;
-import com.umesh.hotelbooking.repository.IdempotencyRecordRepository;
+import com.umesh.hotelbooking.repository.IdempotencyRecordStore;
+import com.umesh.hotelbooking.repository.jpa.JpaStores;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.context.annotation.Import;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -21,12 +24,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * pass against a sweeper that deletes everything, or one that deletes nothing.
  */
 @DataJpaTest
+@Import({FieldEncryptionConfig.class, JpaStores.class})
 class IdempotencyRecordSweeperTest {
 
     private static final Instant START = Instant.parse("2026-09-08T00:00:00Z");
 
     @Autowired
-    private IdempotencyRecordRepository repository;
+    private IdempotencyRecordStore store;
 
     private IdempotencyRecord recordAged(String msgId, Instant createdAt) {
         return IdempotencyRecord.builder()
@@ -39,19 +43,19 @@ class IdempotencyRecordSweeperTest {
         MutableClock clock = new MutableClock(START, ZoneOffset.UTC);
         IdempotencyProperties properties = new IdempotencyProperties(
                 Duration.ofHours(24), new IdempotencyProperties.Sweeper(true, Duration.ofHours(1)));
-        IdempotencyRecordSweeper sweeper = new IdempotencyRecordSweeper(repository, properties, clock);
+        IdempotencyRecordSweeper sweeper = new IdempotencyRecordSweeper(store, properties, clock);
 
-        repository.save(recordAged("old-1", START.minus(Duration.ofHours(25))));
-        repository.save(recordAged("old-2", START.minus(Duration.ofHours(48))));
-        repository.save(recordAged("boundary", START.minus(Duration.ofHours(24))));
-        repository.save(recordAged("fresh-1", START.minus(Duration.ofHours(23))));
-        repository.save(recordAged("fresh-2", START));
+        store.save(recordAged("old-1", START.minus(Duration.ofHours(25))));
+        store.save(recordAged("old-2", START.minus(Duration.ofHours(48))));
+        store.save(recordAged("boundary", START.minus(Duration.ofHours(24))));
+        store.save(recordAged("fresh-1", START.minus(Duration.ofHours(23))));
+        store.save(recordAged("fresh-2", START));
 
         int deleted = sweeper.sweep();
 
         assertThat(deleted).isEqualTo(2);
-        assertThat(repository.findAllById(java.util.List.of("old-1", "old-2"))).isEmpty();
-        assertThat(repository.findAllById(java.util.List.of("boundary", "fresh-1", "fresh-2")))
+        assertThat(store.findAllById(java.util.List.of("old-1", "old-2"))).isEmpty();
+        assertThat(store.findAllById(java.util.List.of("boundary", "fresh-1", "fresh-2")))
                 .as("records inside the retention window must survive").hasSize(3);
     }
 
@@ -59,11 +63,11 @@ class IdempotencyRecordSweeperTest {
     void anEmptySweepDeletesNothingAndDoesNotThrow() {
         MutableClock clock = new MutableClock(START, ZoneOffset.UTC);
         IdempotencyProperties properties = new IdempotencyProperties(Duration.ofHours(24), null);
-        IdempotencyRecordSweeper sweeper = new IdempotencyRecordSweeper(repository, properties, clock);
+        IdempotencyRecordSweeper sweeper = new IdempotencyRecordSweeper(store, properties, clock);
 
-        repository.save(recordAged("fresh", START));
+        store.save(recordAged("fresh", START));
 
         assertThat(sweeper.sweep()).isZero();
-        assertThat(repository.findById("fresh")).isPresent();
+        assertThat(store.findById("fresh")).isPresent();
     }
 }

@@ -6,9 +6,9 @@ import com.umesh.hotelbooking.dto.PropertyResponse;
 import com.umesh.hotelbooking.dto.RoomTypeRequest;
 import com.umesh.hotelbooking.entity.Property;
 import com.umesh.hotelbooking.entity.RoomType;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import com.umesh.hotelbooking.service.PropertyOnboardingService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,11 +53,11 @@ class BookingIdempotencyApiTest {
     @Autowired
     private PropertyOnboardingService onboardingService;
     @Autowired
-    private PropertyRepository propertyRepository;
+    private PropertyStore propertyStore;
     @Autowired
-    private RoomTypeRepository roomTypeRepository;
+    private RoomTypeStore roomTypeStore;
     @Autowired
-    private DailyInventoryRepository dailyInventoryRepository;
+    private DailyInventoryStore dailyInventoryStore;
     @Autowired
     private Clock clock;
 
@@ -73,8 +73,8 @@ class BookingIdempotencyApiTest {
                 uniqueName, "Bengaluru", null, null, null, 4, "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Deluxe King", 5, 4, new BigDecimal("8000.00"))),
                 null));
-        Property property = propertyRepository.findByPropertyUid(response.propertyUid()).orElseThrow();
-        RoomType roomType = roomTypeRepository.findByPropertyId(property.getId()).get(0);
+        Property property = propertyStore.findByPropertyUid(response.propertyUid()).orElseThrow();
+        RoomType roomType = roomTypeStore.findByPropertyId(property.getId()).get(0);
         LocalDate firstNight = LocalDate.now(clock.withZone(property.zone()));
         return new Fixture(roomType.getRoomTypeUid(), roomType.getId(), firstNight);
     }
@@ -92,7 +92,7 @@ class BookingIdempotencyApiTest {
     }
 
     private int bookedUnits(Fixture fixture) {
-        return dailyInventoryRepository.findByRoomTypeIdAndStayDate(fixture.roomTypeId(), fixture.firstNight())
+        return dailyInventoryStore.findByRoomTypeIdAndStayDate(fixture.roomTypeId(), fixture.firstNight())
                 .orElseThrow().getBookedUnits();
     }
 

@@ -2,7 +2,7 @@ package com.umesh.hotelbooking.service;
 
 import com.umesh.hotelbooking.entity.DailyInventory;
 import com.umesh.hotelbooking.entity.RoomType;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,10 +30,10 @@ import java.util.Set;
 @Service
 public class InventoryMaterializer {
 
-    private final DailyInventoryRepository dailyInventoryRepository;
+    private final DailyInventoryStore dailyInventoryStore;
 
-    public InventoryMaterializer(DailyInventoryRepository dailyInventoryRepository) {
-        this.dailyInventoryRepository = dailyInventoryRepository;
+    public InventoryMaterializer(DailyInventoryStore dailyInventoryStore) {
+        this.dailyInventoryStore = dailyInventoryStore;
     }
 
     /**
@@ -69,12 +69,12 @@ public class InventoryMaterializer {
                     .build());
         }
 
-        dailyInventoryRepository.saveAll(newRows);
+        dailyInventoryStore.saveAll(newRows);
         return newRows.size();
     }
 
     private Set<LocalDate> existingNights(Long roomTypeId, LocalDate fromInclusive, LocalDate toExclusive) {
-        List<DailyInventory> existing = dailyInventoryRepository
+        List<DailyInventory> existing = dailyInventoryStore
                 .findByRoomTypeIdAndStayDateBetween(roomTypeId, fromInclusive, toExclusive.minusDays(1));
         Set<LocalDate> nights = new HashSet<>(existing.size());
         for (DailyInventory row : existing) {

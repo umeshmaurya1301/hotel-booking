@@ -17,11 +17,11 @@ import com.umesh.hotelbooking.entity.PaymentState;
 import com.umesh.hotelbooking.entity.PaymentStatusCheck;
 import com.umesh.hotelbooking.entity.RoomType;
 import com.umesh.hotelbooking.gateway.SimulatedOutcome;
-import com.umesh.hotelbooking.repository.IdempotencyRecordRepository;
-import com.umesh.hotelbooking.repository.PaymentRepository;
-import com.umesh.hotelbooking.repository.PaymentStatusCheckRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.IdempotencyRecordStore;
+import com.umesh.hotelbooking.repository.PaymentStore;
+import com.umesh.hotelbooking.repository.PaymentStatusCheckStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import com.umesh.hotelbooking.service.BookingService;
 import com.umesh.hotelbooking.service.MutableClock;
 import com.umesh.hotelbooking.service.PaymentReconciliationService;
@@ -30,7 +30,7 @@ import com.umesh.hotelbooking.service.PropertyOnboardingService;
 import com.umesh.hotelbooking.web.ApiType;
 import com.umesh.hotelbooking.web.RequestMeta;
 import com.umesh.hotelbooking.webhook.WebhookEventLog;
-import com.umesh.hotelbooking.webhook.WebhookEventLogRepository;
+import com.umesh.hotelbooking.repository.WebhookEventLogStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -104,23 +104,23 @@ class NoPiiInAuditOrLogsTest {
     @Autowired
     private PropertyOnboardingService onboardingService;
     @Autowired
-    private PropertyRepository propertyRepository;
+    private PropertyStore propertyStore;
     @Autowired
-    private RoomTypeRepository roomTypeRepository;
+    private RoomTypeStore roomTypeStore;
     @Autowired
     private BookingService bookingService;
     @Autowired
     private PaymentService paymentService;
     @Autowired
-    private PaymentRepository paymentRepository;
+    private PaymentStore paymentStore;
     @Autowired
     private PaymentReconciliationService reconciliationService;
     @Autowired
-    private PaymentStatusCheckRepository statusCheckRepository;
+    private PaymentStatusCheckStore statusCheckStore;
     @Autowired
-    private WebhookEventLogRepository webhookEventLogRepository;
+    private WebhookEventLogStore webhookEventLogStore;
     @Autowired
-    private IdempotencyRecordRepository idempotencyRecordRepository;
+    private IdempotencyRecordStore idempotencyRecordStore;
     @Autowired
     private Clock clock;
 
@@ -157,8 +157,8 @@ class NoPiiInAuditOrLogsTest {
                 "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Deluxe King", 5, 4, new BigDecimal("8000.00"))),
                 null));
-        RoomType roomType = roomTypeRepository.findByPropertyId(
-                propertyRepository.findByPropertyUid(property.propertyUid()).orElseThrow().getId()).get(0);
+        RoomType roomType = roomTypeStore.findByPropertyId(
+                propertyStore.findByPropertyUid(property.propertyUid()).orElseThrow().getId()).get(0);
         LocalDate checkIn = LocalDate.now(clock.withZone(ZoneId.of("Asia/Kolkata"))).plusDays(1);
 
         RequestMeta bookingMeta = new RequestMeta(UUID.randomUUID().toString(), ApiType.CREATE_BOOKING, UUID.randomUUID().toString());
@@ -178,7 +178,7 @@ class NoPiiInAuditOrLogsTest {
         clock().advance(Duration.ofMinutes(2));
         reconciliationService.run();
 
-        String providerReference = paymentRepository.findByPaymentUid(payment.paymentUid()).orElseThrow().getProviderReference();
+        String providerReference = paymentStore.findByPaymentUid(payment.paymentUid()).orElseThrow().getProviderReference();
 
         // An inbound webhook carrying the same shape of raw instrument data a real callback
         // would (design doc 12.6.6), so webhook_event_log gets exercised too.
@@ -198,19 +198,19 @@ class NoPiiInAuditOrLogsTest {
 
         // --- payment_status_check ---
         List<PaymentStatusCheck> statusChecks =
-                statusCheckRepository.findByPaymentIdOrderByAttemptNoAsc(
-                        paymentRepository.findByPaymentUid(payment.paymentUid()).orElseThrow().getId());
+                statusCheckStore.findByPaymentIdOrderByAttemptNoAsc(
+                        paymentStore.findByPaymentUid(payment.paymentUid()).orElseThrow().getId());
         assertThat(statusChecks).isNotEmpty();
         for (PaymentStatusCheck check : statusChecks) {
             assertNoRawSecrets(check.getResponseSummary(), "payment_status_check.response_summary");
         }
 
         // --- webhook_event_log ---
-        WebhookEventLog logRow = webhookEventLogRepository.findByProviderCodeAndEventId("MOCK_CARD", eventId).orElseThrow();
+        WebhookEventLog logRow = webhookEventLogStore.findByProviderCodeAndEventId("MOCK_CARD", eventId).orElseThrow();
         assertNoRawSecrets(logRow.getPayload(), "webhook_event_log.payload");
 
         // --- idempotency_records ---
-        for (IdempotencyRecord record : idempotencyRecordRepository.findAll()) {
+        for (IdempotencyRecord record : idempotencyRecordStore.findAll()) {
             assertNoRawSecrets(record.getResponseBody(), "idempotency_records.response_body");
         }
 

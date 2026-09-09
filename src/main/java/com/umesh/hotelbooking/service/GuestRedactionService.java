@@ -4,7 +4,7 @@ import com.umesh.hotelbooking.dto.GuestResponse;
 import com.umesh.hotelbooking.dto.RedactGuestResponse;
 import com.umesh.hotelbooking.entity.Guest;
 import com.umesh.hotelbooking.exception.GuestNotFoundException;
-import com.umesh.hotelbooking.repository.GuestRepository;
+import com.umesh.hotelbooking.repository.GuestStore;
 import com.umesh.hotelbooking.security.Masker;
 import com.umesh.hotelbooking.web.RequestMeta;
 import org.springframework.stereotype.Service;
@@ -32,12 +32,12 @@ public class GuestRedactionService {
 
     private static final String TOMBSTONE = Masker.TOMBSTONE;
 
-    private final GuestRepository guestRepository;
+    private final GuestStore guestStore;
     private final IdempotencyService idempotencyService;
     private final Clock clock;
 
-    public GuestRedactionService(GuestRepository guestRepository, IdempotencyService idempotencyService, Clock clock) {
-        this.guestRepository = guestRepository;
+    public GuestRedactionService(GuestStore guestStore, IdempotencyService idempotencyService, Clock clock) {
+        this.guestStore = guestStore;
         this.idempotencyService = idempotencyService;
         this.clock = clock;
     }
@@ -49,7 +49,7 @@ public class GuestRedactionService {
             return cached.get();
         }
 
-        Guest guest = guestRepository.findByGuestUid(guestUid)
+        Guest guest = guestStore.findByGuestUid(guestUid)
                 .orElseThrow(() -> new GuestNotFoundException(guestUid));
 
         if (guest.getRedactedAt() == null) {
@@ -62,7 +62,7 @@ public class GuestRedactionService {
             guest.setAddress(TOMBSTONE);
             guest.setDateOfBirth(null);
             guest.setRedactedAt(Instant.now(clock));
-            guestRepository.save(guest);
+            guestStore.save(guest);
         }
 
         RedactGuestResponse response = RedactGuestResponse.from(guest);
@@ -72,7 +72,7 @@ public class GuestRedactionService {
 
     @Transactional(readOnly = true)
     public GuestResponse find(String guestUid) {
-        Guest guest = guestRepository.findByGuestUid(guestUid)
+        Guest guest = guestStore.findByGuestUid(guestUid)
                 .orElseThrow(() -> new GuestNotFoundException(guestUid));
         return GuestResponse.from(guest);
     }

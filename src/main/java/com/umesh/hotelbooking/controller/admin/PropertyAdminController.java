@@ -11,13 +11,13 @@ import com.umesh.hotelbooking.web.RequireRole;
 import com.umesh.hotelbooking.web.Role;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -38,10 +38,15 @@ public class PropertyAdminController {
         this.propertyOnboardingService = propertyOnboardingService;
     }
 
+    /** {@code @ResponseStatus} rather than a {@code ResponseEntity} for the same reason
+     * {@code BookingController.create} uses it — the status is otherwise invisible to anything
+     * reading the method's metadata, and was documented as a plain 200 by springdoc until
+     * Phase 10 (see PROJECT_STRUCTURE.txt.txt 16.9). */
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     @Api(ApiType.ONBOARD_PROPERTY)
-    public ResponseEntity<PropertyResponse> onboard(@Valid @RequestBody ApiRequest<OnboardPropertyRequest> request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(propertyOnboardingService.onboard(request.payload()));
+    public PropertyResponse onboard(@Valid @RequestBody ApiRequest<OnboardPropertyRequest> request) {
+        return propertyOnboardingService.onboard(request.payload());
     }
 
     @PatchMapping("/{propertyUid}")

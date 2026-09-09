@@ -24,6 +24,11 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
+	// Phase 10 (design doc 17): OpenAPI/Swagger UI. The 3.x line is springdoc's Spring Boot 4
+	// line - 2.x targets Boot 3 and does not resolve here. Unlike resilience4j-spring-boot4
+	// (absent from Maven Central entirely, see 16.2), this one genuinely exists, so the
+	// hand-written stand-in that phase needed is not required here.
+	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1")
 	compileOnly("org.projectlombok:lombok")
 	runtimeOnly("com.h2database:h2")
 	// MySQL reference profile only (design doc 13.1, application-mysql.yml) - not active by

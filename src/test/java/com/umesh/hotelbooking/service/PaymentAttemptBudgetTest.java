@@ -10,8 +10,8 @@ import com.umesh.hotelbooking.entity.PaymentMethod;
 import com.umesh.hotelbooking.entity.PaymentState;
 import com.umesh.hotelbooking.entity.PaymentStatusCheck;
 import com.umesh.hotelbooking.gateway.SimulatedOutcome;
-import com.umesh.hotelbooking.repository.PaymentRepository;
-import com.umesh.hotelbooking.repository.PaymentStatusCheckRepository;
+import com.umesh.hotelbooking.repository.PaymentStore;
+import com.umesh.hotelbooking.repository.PaymentStatusCheckStore;
 import com.umesh.hotelbooking.web.ApiType;
 import com.umesh.hotelbooking.web.RequestMeta;
 import org.junit.jupiter.api.Test;
@@ -66,9 +66,9 @@ class PaymentAttemptBudgetTest extends AbstractBookingConcurrencyTestSupport {
     @Autowired
     private PaymentReconciliationService reconciliationService;
     @Autowired
-    private PaymentRepository paymentRepository;
+    private PaymentStore paymentStore;
     @Autowired
-    private PaymentStatusCheckRepository statusCheckRepository;
+    private PaymentStatusCheckStore statusCheckStore;
     @Autowired
     private Clock clock;
 
@@ -99,13 +99,13 @@ class PaymentAttemptBudgetTest extends AbstractBookingConcurrencyTestSupport {
         PaymentResponse initiated = paymentService.pay(bookingUid, payMeta(),
                 new InitiatePaymentRequest(PaymentMethod.CARD, SimulatedOutcome.TIMEOUT));
         assertThat(initiated.state()).isEqualTo(PaymentState.UNKNOWN);
-        assertThat(paymentRepository.findByPaymentUid(initiated.paymentUid()).orElseThrow().getAttemptNo())
+        assertThat(paymentStore.findByPaymentUid(initiated.paymentUid()).orElseThrow().getAttemptNo())
                 .isZero();
 
         clock().advance(Duration.ofSeconds(31));
         reconciliationService.run();
 
-        Payment reloaded = paymentRepository.findByPaymentUid(initiated.paymentUid()).orElseThrow();
+        Payment reloaded = paymentStore.findByPaymentUid(initiated.paymentUid()).orElseThrow();
         assertThat(reloaded.getState()).isEqualTo(PaymentState.UNKNOWN);
         assertThat(reloaded.getAttemptNo())
                 .as("an ERROR is not evidence about the transaction - it must not consume the ladder's budget")
@@ -114,7 +114,7 @@ class PaymentAttemptBudgetTest extends AbstractBookingConcurrencyTestSupport {
                 .as("the schedule still advances even though the attempt count does not")
                 .isAfter(clock().instant().minusSeconds(1));
 
-        List<PaymentStatusCheck> checks = statusCheckRepository.findByPaymentIdOrderByAttemptNoAsc(reloaded.getId());
+        List<PaymentStatusCheck> checks = statusCheckStore.findByPaymentIdOrderByAttemptNoAsc(reloaded.getId());
         assertThat(checks).as("an error we did not record is an error we cannot reconstruct").hasSize(1);
         assertThat(checks.get(0).getGatewayStatus()).isEqualTo(GatewayCheckStatus.ERROR);
     }
@@ -131,13 +131,13 @@ class PaymentAttemptBudgetTest extends AbstractBookingConcurrencyTestSupport {
         clock().advance(Duration.ofSeconds(31));
         reconciliationService.run();
 
-        Payment reloaded = paymentRepository.findByPaymentUid(initiated.paymentUid()).orElseThrow();
+        Payment reloaded = paymentStore.findByPaymentUid(initiated.paymentUid()).orElseThrow();
         assertThat(reloaded.getState()).isEqualTo(PaymentState.UNKNOWN);
         assertThat(reloaded.getAttemptNo())
                 .as("a genuine PENDING answer is an observation and must consume the budget")
                 .isEqualTo(1);
 
-        List<PaymentStatusCheck> checks = statusCheckRepository.findByPaymentIdOrderByAttemptNoAsc(reloaded.getId());
+        List<PaymentStatusCheck> checks = statusCheckStore.findByPaymentIdOrderByAttemptNoAsc(reloaded.getId());
         assertThat(checks).hasSize(1);
         assertThat(checks.get(0).getGatewayStatus()).isEqualTo(GatewayCheckStatus.PENDING);
         assertThat(checks.get(0).getAttemptNo()).isEqualTo(1);

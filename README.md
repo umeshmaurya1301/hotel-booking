@@ -28,9 +28,23 @@ app listens on `:8080`.
 
 Both commands above were run against this exact checkout before being written down here.
 
+**API documentation** — with the app running, Swagger UI is at
+[`/swagger-ui.html`](http://localhost:8080/swagger-ui.html) and the raw OpenAPI document at
+`/v3/api-docs`. See [API documentation](#api-documentation-openapi) for what had to be
+customised to make that document *true*.
+
 **MySQL reference profile** — a *reference* profile, not active by default; see
 [MySQL reference profile](#mysql-reference-profile) below. Do not use it to run the app unless
 you actually have a MySQL instance.
+
+**Docker** — optional and deliberately not the primary path (design doc 16, 13.1):
+
+```
+docker build -t hotel-booking .
+docker run -e ENCRYPTION_KEY="$(openssl rand -base64 32)" -p 8080:8080 hotel-booking
+```
+
+See [Docker](#docker) below. Both commands were run against this checkout.
 
 ## API walkthrough (cURL)
 
@@ -241,7 +255,42 @@ curl -X POST http://localhost:8080/api/v1/user/bookings -H 'Content-Type: applic
 failed". This is also the exact message shape a stale search result turns into when a client
 acts on it after someone else took the room (see [Assumptions](#assumptions)).
 
+## API documentation (OpenAPI)
+
+Swagger UI at `/swagger-ui.html`, raw document at `/v3/api-docs`, via springdoc-openapi. The
+dependency is one line; `OpenApiConfig` is the part worth reading, and it exists because the
+generated document was **wrong** out of the box in two specific ways:
+
+- **It documented the wrong response shape.** springdoc reads controller method signatures, and
+  every `controller.admin` / `controller.user` method returns a bare DTO — the `ApiResponse`
+  envelope is added afterwards by `ResponseEnvelopeAdvice`, at a layer springdoc cannot see. So
+  `POST /api/v1/user/bookings` was documented as returning `BookingResponse` directly, when a
+  client actually receives that object nested under `data`. A client generated from that
+  document looks for `bookingUid` at the top level and never finds it.
+- **It documented the wrong status code.** Both `POST /api/v1/user/bookings` and
+  `POST /api/v1/admin/properties` return 201, but set it inside a `ResponseEntity`, which is
+  runtime code rather than metadata — springdoc reported a plain 200. Both now declare
+  `@ResponseStatus(HttpStatus.CREATED)` and return the plain DTO, which is behaviourally
+  identical, introspectable, and incidentally matches how every other controller in the
+  codebase is written.
+
+The wrapping is applied by an `OperationCustomizer` scoped to the *same two base packages*
+`ResponseEnvelopeAdvice` is scoped to, rather than by annotating twenty controller methods —
+a per-method annotation would be a second copy of "which endpoints are enveloped", free to
+drift from the first. `controller.webhook` is correctly left unwrapped, because that path
+genuinely returns a bare `WebhookAck` on the provider's own contract. `OpenApiDocumentTest`
+asserts all of this, so the document cannot quietly go back to lying.
+
+The stubbed `X-Role` header is documented per route too — read from each controller's own
+`@RequireRole` — since a reader of the spec would otherwise have no way to know it exists.
+
 ## Architecture
+
+> **Diagrams:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) carries four rendered plates — the layer
+> stack and persistence seam, the reservation mechanism as a sequence, the full 16-table ER diagram, and
+> the booking state machine — plus a table of every constraint and index with what it buys. Mermaid, so
+> it renders inline on GitHub. [`docs/schematics.html`](docs/schematics.html) is the same four plates as
+> a styled standalone page; open it in a browser, no build step.
 
 ```
 controller.admin / controller.user / controller.webhook   <- one package per role (design doc 11.4)
@@ -249,13 +298,17 @@ controller.advice                                          <- envelope + excepti
         |
       service                                               <- business logic, one class per responsibility
         |                        \
-   repository (Spring Data JPA)   gateway / webhook / crypto / security   <- outbound & cross-cutting concerns
+   repository (ports: *Store)     gateway / webhook / crypto / security   <- outbound & cross-cutting concerns
+        |
+   repository.jpa (adapters)                                <- the only package that names Spring Data or JPQL
         |
       entity (JPA)                                          <- the schema's single source of truth
 ```
 
 Dependency direction is one-way, top to bottom: controllers depend on services, services on
-repositories and entities, nothing depends back up. `dto` (wire-contract records) and `config`
+persistence ports and entities, nothing depends back up. Nothing above `repository.jpa` imports
+`org.springframework.data` — see [the persistence
+seam](#the-persistence-seam-ports-and-adapters-not-jparepository) below. `dto` (wire-contract records) and `config`
 (`@ConfigurationProperties`) are used from every layer and depend on nothing else in the
 project. `entity` holds the state machines (`BookingStateMachine`, `PaymentStateMachine`,
 `RefundStateMachine`, `ReversalStateMachine`) as static, table-driven classes alongside the
@@ -275,6 +328,52 @@ that structure visible in the package tree rather than only in prose.
 
 Each of the following was a real choice with a losing alternative, not a description of code
 that is already readable on its own. Section numbers refer to `PROJECT_STRUCTURE.txt.txt`.
+
+### The persistence seam: ports and adapters, not `JpaRepository`
+
+The brief asks that persistence stay "behind repository interfaces so it could be swapped
+later". Extending `JpaRepository` directly — the obvious reading, and what this project did
+until Phase 10 — satisfies that in letter only. The interface is then a *JPA* interface: its
+query methods are Spring Data derived queries, its important statements are JPQL, and every
+caller that touches it depends on JPA. Swapping the store would mean rewriting the interfaces,
+not just the implementations, which is the one thing the seam existed to prevent.
+
+So the layer is split in two:
+
+- **`repository`** — one `*Store` port per aggregate (14 of them). Plain Java interfaces over
+  domain types. Nothing here imports `org.springframework.data`.
+- **`repository.jpa`** — for each port, a package-private Spring Data interface holding the
+  queries and a package-private adapter implementing the port by delegating to it. The only
+  package in the application that names a Spring Data type or contains a line of JPQL.
+- **`JpaStores`** — one `@Configuration` binding all 14 ports to their adapters. Swapping a
+  store is editing the line that names it; a partial migration is editing the lines you are
+  moving.
+
+The payoff is sharpest at `DailyInventoryStore.reserveUnits`, which is the correctness
+mechanism of the whole system. As a port it states the *contract* — reserve-or-refuse, decided
+atomically, answered by a row count where 0 means "not enough availability" — in terms a
+document store or an in-memory store could also satisfy. The single conditional `UPDATE` that
+currently honours it is one store's answer, documented on the adapter. That is the difference
+between a guarantee the domain owns and a guarantee that happens to be true of the ORM in use.
+
+`PropertyStore.findForSearchByCityNormalised` makes the same point from the other direction:
+the port asks for search candidates with room types and amenities loaded, and the two-query
+fetch strategy that avoids both N+1 and a Hibernate cartesian product lives entirely inside
+`JpaPropertyStore`. The search service never knew about `MultipleBagFetchException`, and now it
+structurally cannot.
+
+**The honest limit.** The ports return the `@Entity` types rather than a separate set of
+persistence-free domain objects mapped at the boundary. Entities here are already close to
+plain domain objects — the state machines and invariants live on them, not in the services — so
+a parallel model plus mappers would double the type count to remove an annotation. The ports
+are store-agnostic; the types crossing them are still JPA-annotated. A genuinely non-relational
+implementation would need that second step. This layer makes it possible; it does not take it.
+
+**Cost paid:** 14 hand-written adapters, ~40 files, one extra call per persistence operation.
+For a service this size that is a real tax, and worth naming rather than pretending the layer
+is free.
+
+### Other decisions
 
 **Per-night inventory rows, not date ranges (4.1).** `daily_inventory` has one row per
 `(room_type_id, stay_date)`, not a range table with overlap logic. A range representation makes
@@ -461,6 +560,26 @@ that data to begin with. Crypto-shredding (encrypting PII with a per-guest key, 
 the key to "erase" it) was considered and not needed: real deletion of a genuinely isolated row
 is simpler and gives a stronger guarantee than a key-destruction scheme adds.
 
+**Field-level encryption at rest for guest PII, and why it is not crypto-shredding (12.6).**
+`Guest`'s `fullName`, `email`, `phone`, `address` and `dateOfBirth` are encrypted per column
+with AES-GCM (`EncryptedStringConverter` / `EncryptedLocalDateConverter`), so a stolen database
+file or backup does not hand over identities in the clear. GCM rather than CBC or ECB, for two
+concrete reasons: it is authenticated, so a row edited underneath the application fails to
+decrypt instead of yielding plausible garbage; and a random IV per value means two guests with
+the same name do not produce the same ciphertext, so the column does not leak equality while
+appearing to hide values. This is a *different* concern from erasure and does not replace it —
+`GuestRedactionService` still really overwrites the plaintext with a tombstone, and
+crypto-shredding (encrypting per guest, then discarding that guest's key to "erase" them)
+remains rejected for the reason given below. Applied per field, never with `autoApply`:
+encrypting every string in the schema would put ciphertext in `booking_uid` and
+`city_normalised`, which are exactly the columns things look up by value. `guestUid` and
+`redactedAt` are deliberately left in the clear so lookups still work and "this guest was
+erased" stays auditable without decrypting anything. Two real costs, both accepted knowingly:
+the columns had to be widened substantially (ciphertext is ~4/3 of plaintext plus IV, tag and
+Base64 overhead), and `dateOfBirth` stops being a SQL `DATE` — a capability nothing in this
+system used for that column, and the reason the same treatment would *not* be defensible on
+`bookings.check_in`.
+
 **Stay dates + property are a location history — a by-product, not a collected field
 (12.6.1).** Nowhere does this system have a "guest location" field; the fact that a booking
 names a property and a date range is enough to reconstruct where a guest was and when. This is
@@ -533,6 +652,14 @@ wrong thing to do regardless of how cheap the calling thread was.
 - **`ddl-auto: create-drop`** for the default H2 profile: the schema is thrown away and rebuilt
   on every restart, which is correct for a demo/review database and would never be correct
   against a real one — see the MySQL profile's `validate` instead.
+- **The committed encryption key is a development placeholder**, exactly like the webhook
+  provider secrets alongside it: `security.encryption.key` is overridable by the
+  `ENCRYPTION_KEY` environment variable, and in production would come from that or a secret
+  manager, never from committed YAML. The design document deliberately does not invent a
+  key-management story beyond externalised config, and neither does this — there is no key
+  rotation, no envelope encryption and no HSM here. `FieldCipher` stamps a `v1:` prefix on
+  every value it writes precisely so that a future key or algorithm change has something
+  unambiguous to branch on rather than having to guess what an existing row contains.
 - **Search is advisory, not a reservation** (see the search-then-book bullet above and the
   cURL walkthrough's sold-out example): the room-night a search result names can be gone by the
   time booking is called, by design, and the booking path is the sole source of truth.
@@ -550,7 +677,7 @@ stronger signal at this level than building any of them prematurely.").
 > | Not built | Where it would go in production |
 > |---|---|
 > | Microservices | Split along property-catalog / inventory / booking / payment. Booking↔inventory↔payment currently share a transaction boundary; splitting them requires a saga with compensating actions — the reversal machinery in Section 9 is exactly that compensation, already modelled. |
-> | gRPC | Inter-service calls once split. There is no pre-existing port interface to promote (0.1 dropped that layer) — extracting a service means defining a gRPC contract from the relevant service-layer method signatures directly and wrapping the existing service class as its implementation, which is mechanical but is genuinely a new step rather than a reuse of something already in place. |
+> | gRPC | Inter-service calls once split. Extracting a service means defining a gRPC contract from the relevant service-layer method signatures directly and wrapping the existing service class as its implementation, which is mechanical but is genuinely a new step rather than a reuse of something already in place. (The design document wrote this row when 0.1 had dropped the port layer; the `*Store` ports added since are *persistence* ports, so they are the seam a store swap goes through, not a service boundary a gRPC contract could be promoted from. The distinction is the point — a port is only useful at the boundary it was drawn for.) |
 > | Kafka + Avro + DLQ | The domain events already published in-process (BookingConfirmedEvent, PaymentSettledEvent) become topic messages. Avro schemas with a registry for contract evolution; DLQ for poison messages after bounded retry. Notification and reporting become consumers. |
 > | Redis | Read-through cache for property catalog and hot availability. Distributed locking deliberately not proposed as a primary mechanism — Redlock's correctness under partition and clock skew is contested; the DB constraint remains the guarantee. |
 > | Reporting store + partitioning | Booking history is append-heavy and queried by date range. CDC (Debezium → Kafka) into a reporting store; bookings PARTITION BY RANGE (YEAR(check_in)) in MySQL for partition pruning on date-bounded reports and cheap old-partition drops for retention. Not built here: H2 has no partitioning support, and at seed-data volume partition pruning would demonstrate nothing measurable. |
@@ -563,9 +690,10 @@ stronger signal at this level than building any of them prematurely.").
 
 ## What would come next with more time
 
-- **Swagger/OpenAPI, AES field encryption, Docker** — explicitly deferred to Phase 10 ("not in
-  the rubric, added last, only if tests and README are complete", design doc 17), and this
-  phase's own scope excludes building them (§8 of this phase's own task spec).
+- **Key management for field encryption.** The encryption itself is built (see above), but its
+  key lifecycle is not: no rotation, no re-encryption of existing rows under a new key, no
+  envelope encryption or KMS/HSM integration. The `v1:` version prefix on every encrypted value
+  exists so that work has somewhere to hook in, but the work itself is real and unstarted.
 - **A real authentication/authorisation layer** replacing the stubbed `X-Role` header —
   structurally ready for it (role separation already exists as distinct packages and URL
   spaces), but the enforcement itself is out of scope per the brief.
@@ -608,3 +736,37 @@ against real MySQL.
 
 The suite runs on H2 only; the MySQL profile is intentionally never exercised by
 `./gradlew test` (see [What would come next](#what-would-come-next-with-more-time)).
+
+## Docker
+
+A `Dockerfile` is included and is explicitly **not** the primary way to run this project —
+design doc 16 lists Docker as "not in the rubric, added last, only if tests and README are
+complete", and 13.1's whole argument is that `./gradlew bootRun` must work first try with
+nothing installed. Nothing else in the repository depends on it.
+
+```
+docker build -t hotel-booking .
+docker run -e ENCRYPTION_KEY="$(openssl rand -base64 32)" -p 8080:8080 hotel-booking
+```
+
+Both were run against this checkout: the image builds, the container comes up, `/actuator/health`
+reports `UP`, the API and Swagger UI both answer through it, and Docker's own `HEALTHCHECK`
+transitions to `healthy`. The container runs as a non-root user (`uid=10001(hotel)`), which is
+free here because the application binds an unprivileged port, writes no files, and keeps its
+entire database in memory.
+
+Two deliberate omissions:
+
+- **No Compose file and no MySQL service.** Adding one would reintroduce exactly the setup cost
+  design doc 13.1 chose H2 to avoid. The container runs the same in-memory H2 the default
+  profile does, so a container is a way to run this app without a JDK — not a way to run it
+  against a real database.
+- **No key baked into the image.** The encryption key is read from the environment, so the
+  image carries none; an `ENV` line would put it in the image metadata for anyone who pulls it.
+  The committed development default in `application.yml` is what makes `docker run` work with
+  no arguments at all.
+
+The image is ~580MB, most of which is the Temurin JRE base and the 65MB fat jar. A smaller
+image (jlink/jdeps custom runtime, or Boot's layered-jar extraction for better layer caching)
+is a real and unexercised option — at this project's scale it would be optimising something
+nobody is waiting on.

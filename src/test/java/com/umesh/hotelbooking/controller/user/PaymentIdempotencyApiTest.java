@@ -13,10 +13,10 @@ import com.umesh.hotelbooking.entity.Property;
 import com.umesh.hotelbooking.entity.RoomType;
 import com.umesh.hotelbooking.gateway.MockCardProvider;
 import com.umesh.hotelbooking.gateway.PaymentRequest;
-import com.umesh.hotelbooking.repository.LedgerEntryRepository;
-import com.umesh.hotelbooking.repository.PaymentRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.LedgerEntryStore;
+import com.umesh.hotelbooking.repository.PaymentStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import com.umesh.hotelbooking.service.BookingService;
 import com.umesh.hotelbooking.service.PropertyOnboardingService;
 import com.umesh.hotelbooking.web.ApiType;
@@ -73,17 +73,17 @@ class PaymentIdempotencyApiTest {
     @Autowired
     private PropertyOnboardingService onboardingService;
     @Autowired
-    private PropertyRepository propertyRepository;
+    private PropertyStore propertyStore;
     @Autowired
-    private RoomTypeRepository roomTypeRepository;
+    private RoomTypeStore roomTypeStore;
     @Autowired
     private BookingService bookingService;
     @Autowired
-    private PaymentRepository paymentRepository;
+    private PaymentStore paymentStore;
     @Autowired
-    private LedgerEntryRepository ledgerEntryRepository;
+    private LedgerEntryStore ledgerEntryStore;
     @Autowired
-    private com.umesh.hotelbooking.repository.BookingRepository bookingRepository;
+    private com.umesh.hotelbooking.repository.BookingStore bookingStore;
     @Autowired
     private Clock clock;
     @MockitoSpyBean
@@ -100,8 +100,8 @@ class PaymentIdempotencyApiTest {
                 uniqueName, "Bengaluru", null, null, null, 4, "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Deluxe King", 5, 4, new BigDecimal("8000.00"))),
                 null));
-        Property property = propertyRepository.findByPropertyUid(response.propertyUid()).orElseThrow();
-        RoomType roomType = roomTypeRepository.findByPropertyId(property.getId()).get(0);
+        Property property = propertyStore.findByPropertyUid(response.propertyUid()).orElseThrow();
+        RoomType roomType = roomTypeStore.findByPropertyId(property.getId()).get(0);
         LocalDate firstNight = LocalDate.now(clock.withZone(property.zone()));
         return new Fixture(roomType.getRoomTypeUid(), firstNight);
     }
@@ -147,9 +147,9 @@ class PaymentIdempotencyApiTest {
         assertThat(secondJson.get("data")).as("a replay returns the identical stored response")
                 .isEqualTo(firstJson.get("data"));
 
-        Long bookingId = bookingRepository.findByBookingUid(bookingUid).orElseThrow().getId();
-        assertThat(paymentRepository.findByBookingId(bookingId)).hasSize(1);
-        assertThat(ledgerEntryRepository.findByBookingIdOrderByOccurredAtAsc(bookingId))
+        Long bookingId = bookingStore.findByBookingUid(bookingUid).orElseThrow().getId();
+        assertThat(paymentStore.findByBookingId(bookingId)).hasSize(1);
+        assertThat(ledgerEntryStore.findByBookingIdOrderByOccurredAtAsc(bookingId))
                 .extracting(LedgerEntry::getType)
                 .containsExactly(EntryType.CHARGE);
 

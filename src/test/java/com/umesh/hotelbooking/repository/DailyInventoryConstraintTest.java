@@ -1,9 +1,12 @@
 package com.umesh.hotelbooking.repository;
 
+import com.umesh.hotelbooking.config.FieldEncryptionConfig;
 import com.umesh.hotelbooking.entity.DailyInventory;
+import com.umesh.hotelbooking.repository.jpa.JpaStores;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
@@ -22,10 +25,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * logic can be wrong; a check constraint cannot be argued with.
  */
 @DataJpaTest
+@Import({FieldEncryptionConfig.class, JpaStores.class})
 class DailyInventoryConstraintTest {
 
     @Autowired
-    private DailyInventoryRepository dailyInventoryRepository;
+    private DailyInventoryStore dailyInventoryStore;
 
     private DailyInventory.DailyInventoryBuilder validRow() {
         return DailyInventory.builder()
@@ -39,7 +43,7 @@ class DailyInventoryConstraintTest {
 
     @Test
     void aValidRowPersists() {
-        DailyInventory saved = dailyInventoryRepository.saveAndFlush(validRow().build());
+        DailyInventory saved = dailyInventoryStore.saveAndFlush(validRow().build());
 
         assertThat(saved.getId()).isNotNull();
         assertThat(saved.availableUnits()).isEqualTo(10);
@@ -49,7 +53,7 @@ class DailyInventoryConstraintTest {
     void bookedUnitsExceedingTotalUnitsIsRejectedByTheDatabase() {
         DailyInventory overbooked = validRow().totalUnits(10).bookedUnits(11).build();
 
-        assertThatThrownBy(() -> dailyInventoryRepository.saveAndFlush(overbooked))
+        assertThatThrownBy(() -> dailyInventoryStore.saveAndFlush(overbooked))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -58,7 +62,7 @@ class DailyInventoryConstraintTest {
         // Sold out is legal; over-sold is not. The boundary matters.
         DailyInventory soldOut = validRow().totalUnits(10).bookedUnits(10).build();
 
-        DailyInventory saved = dailyInventoryRepository.saveAndFlush(soldOut);
+        DailyInventory saved = dailyInventoryStore.saveAndFlush(soldOut);
 
         assertThat(saved.availableUnits()).isZero();
         assertThat(saved.hasCapacityFor(1)).isFalse();
@@ -68,7 +72,7 @@ class DailyInventoryConstraintTest {
     void negativeBookedUnitsIsRejected() {
         DailyInventory negative = validRow().bookedUnits(-1).build();
 
-        assertThatThrownBy(() -> dailyInventoryRepository.saveAndFlush(negative))
+        assertThatThrownBy(() -> dailyInventoryStore.saveAndFlush(negative))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -76,23 +80,23 @@ class DailyInventoryConstraintTest {
     void nonPositivePriceIsRejected() {
         DailyInventory free = validRow().pricePerUnit(BigDecimal.ZERO).build();
 
-        assertThatThrownBy(() -> dailyInventoryRepository.saveAndFlush(free))
+        assertThatThrownBy(() -> dailyInventoryStore.saveAndFlush(free))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
     void twoRowsForTheSameRoomTypeAndNightAreRejected() {
         // One counter per room-night. A duplicate would let two bookings each see capacity.
-        dailyInventoryRepository.saveAndFlush(validRow().build());
+        dailyInventoryStore.saveAndFlush(validRow().build());
 
-        assertThatThrownBy(() -> dailyInventoryRepository.saveAndFlush(validRow().build()))
+        assertThatThrownBy(() -> dailyInventoryStore.saveAndFlush(validRow().build()))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
     void theSameNightForADifferentRoomTypeIsFine() {
-        dailyInventoryRepository.saveAndFlush(validRow().roomTypeId(1L).build());
-        DailyInventory other = dailyInventoryRepository.saveAndFlush(validRow().roomTypeId(2L).build());
+        dailyInventoryStore.saveAndFlush(validRow().roomTypeId(1L).build());
+        DailyInventory other = dailyInventoryStore.saveAndFlush(validRow().roomTypeId(2L).build());
 
         assertThat(other.getId()).isNotNull();
     }

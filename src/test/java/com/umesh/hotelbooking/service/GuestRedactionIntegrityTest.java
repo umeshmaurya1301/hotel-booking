@@ -17,10 +17,10 @@ import com.umesh.hotelbooking.entity.Guest;
 import com.umesh.hotelbooking.entity.PaymentMethod;
 import com.umesh.hotelbooking.entity.PaymentState;
 import com.umesh.hotelbooking.entity.RoomType;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.GuestRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.GuestStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import com.umesh.hotelbooking.web.ApiType;
 import com.umesh.hotelbooking.web.RequestMeta;
 import org.junit.jupiter.api.Test;
@@ -55,9 +55,9 @@ class GuestRedactionIntegrityTest {
     @Autowired
     private PropertyOnboardingService onboardingService;
     @Autowired
-    private PropertyRepository propertyRepository;
+    private PropertyStore propertyStore;
     @Autowired
-    private RoomTypeRepository roomTypeRepository;
+    private RoomTypeStore roomTypeStore;
     @Autowired
     private BookingService bookingService;
     @Autowired
@@ -67,9 +67,9 @@ class GuestRedactionIntegrityTest {
     @Autowired
     private GuestRedactionService guestRedactionService;
     @Autowired
-    private GuestRepository guestRepository;
+    private GuestStore guestStore;
     @Autowired
-    private BookingRepository bookingRepository;
+    private BookingStore bookingStore;
     @Autowired
     private LedgerService ledgerService;
     @Autowired
@@ -90,8 +90,8 @@ class GuestRedactionIntegrityTest {
                 "Asia/Kolkata", "INR", null,
                 List.of(new RoomTypeRequest("Deluxe King", 5, 4, new BigDecimal("8000.00"))),
                 null));
-        RoomType roomType = roomTypeRepository.findByPropertyId(
-                propertyRepository.findByPropertyUid(property.propertyUid()).orElseThrow().getId()).get(0);
+        RoomType roomType = roomTypeStore.findByPropertyId(
+                propertyStore.findByPropertyUid(property.propertyUid()).orElseThrow().getId()).get(0);
         // Ten nights out: well past the 24h cancellation-notice cutoff.
         LocalDate checkIn = LocalDate.now(clock.withZone(ZoneId.of("Asia/Kolkata"))).plusDays(10);
 
@@ -114,7 +114,7 @@ class GuestRedactionIntegrityTest {
                 .isLessThan(totalCharged)
                 .isEqualByComparingTo(totalCharged.multiply(new BigDecimal("0.5")));
 
-        Booking bookingEntity = bookingRepository.findByBookingUid(booking.bookingUid()).orElseThrow();
+        Booking bookingEntity = bookingStore.findByBookingUid(booking.bookingUid()).orElseThrow();
         BigDecimal balanceBeforeRedaction = ledgerService.remainingBalance(bookingEntity.getId());
 
         RedactGuestResponse first = guestRedactionService.redact(
@@ -126,7 +126,7 @@ class GuestRedactionIntegrityTest {
         assertThat(reloaded.bookingUid()).isEqualTo(booking.bookingUid());
         assertThat(reloaded.guestUid()).isEqualTo(booking.guestUid());
 
-        Guest guest = guestRepository.findByGuestUid(booking.guestUid()).orElseThrow();
+        Guest guest = guestStore.findByGuestUid(booking.guestUid()).orElseThrow();
         assertThat(guest.getFullName()).isEqualTo("[REDACTED]");
         assertThat(guest.getEmail()).isEqualTo("[REDACTED]");
         assertThat(guest.getPhone()).isEqualTo("[REDACTED]");

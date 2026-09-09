@@ -135,19 +135,39 @@ CREATE TABLE daily_inventory (
 -- guests — the guest profile (design doc 12.6.1). Referenced from bookings by guest_id only;
 -- personal data never inlines into an append-only record (12.6.3). redacted_at is the
 -- erasure tombstone: non-null means this guest has been erased.
+--
+-- Every PII column is ENCRYPTED AT REST (Phase 10): AES-GCM via EncryptedStringConverter /
+-- EncryptedLocalDateConverter, stored as "v1:" + Base64(iv || ciphertext || tag). Three
+-- consequences are visible in the DDL below and are not accidental:
+--   1. The columns are wide. An encrypted value is roughly 4*ceil((28 + utf8Bytes)/3) + 3
+--      characters, so each is sized for its GuestDetails @Size limit at the UTF-8 worst case
+--      of four bytes per character (address is capped at 300 characters on input and needs
+--      ~1640). The DTO's validation is what keeps these bounds honest.
+--   2. date_of_birth is VARCHAR, not DATE. It is stored ISO-8601 then encrypted, so it can no
+--      longer be range-queried or compared in SQL — a capability nothing in this system used
+--      for this column, which is exactly why encrypting it is defensible here and would not be
+--      on bookings.check_in.
+--   3. guest_uid is deliberately NOT encrypted: it is the opaque handle every lookup and every
+--      append-only table uses. Encrypting it would break findByGuestUid outright.
+-- redacted_at also stays plaintext, so "this guest was erased" remains auditable without
+-- decrypting anything. Encryption at rest does not replace erasure (12.6.3) — the tombstone is
+-- still really written over the plaintext; it protects against a reader of the storage layer,
+-- which erasure never addressed.
 -- =====================================================================================
 CREATE TABLE guests (
     id             BIGINT AUTO_INCREMENT PRIMARY KEY,
     guest_uid      VARCHAR(36)  NOT NULL,
-    full_name      VARCHAR(120),
-    email          VARCHAR(200),
-    phone          VARCHAR(20),
-    address        VARCHAR(300),
-    date_of_birth  DATE,
+    full_name      VARCHAR(1024),
+    email          VARCHAR(1536),
+    phone          VARCHAR(256),
+    address        VARCHAR(2048),
+    date_of_birth  VARCHAR(128),
     redacted_at    DATETIME(6),
     -- Deliberately no unique index on email: two bookings by the same person are not a
     -- conflict, and a unique index on a redactable column would let an erasure tombstone
-    -- collide with another still-live row sharing the placeholder value.
+    -- collide with another still-live row sharing the placeholder value. Encryption makes the
+    -- point moot besides — a random IV per value means the same email encrypts differently
+    -- every time, so a unique index on it could not detect duplicates even if one existed.
     CONSTRAINT uq_guest_uid UNIQUE (guest_uid)
 ) ENGINE = InnoDB;
 

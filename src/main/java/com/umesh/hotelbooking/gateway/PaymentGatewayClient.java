@@ -19,11 +19,12 @@ import java.util.concurrent.TimeUnit;
  * retried attempt counts as one entry in the breaker's window. Retrying against an already
  * OPEN breaker would just be pounding a dependency that has already told us it is unwell.
  *
- * <p>Retry configuration is hardcoded rather than bound to {@code payment.gateway.retry.*}:
- * {@code @Retryable}'s numeric attributes must be compile-time constants, and its
+ * <p>Retry configuration is hardcoded (2 attempts, 50ms initial delay, 300ms cap, x2 backoff)
+ * because {@code @Retryable}'s numeric attributes must be compile-time constants. Its
  * {@code *String} variants exist for exactly this, but risking an unverified duration-parsing
- * format on a resilience path is a worse trade than a literal kept manually in sync with the
- * documented config's intent (2 attempts, 50ms initial delay, 300ms cap, x2 backoff).
+ * format on a resilience path is the worse trade. There is deliberately no
+ * {@code payment.gateway.retry.*} block in {@code application.yml} to pair with these values:
+ * config nothing reads is not configuration, it is a comment that looks authoritative.
  */
 @Service
 public class PaymentGatewayClient {

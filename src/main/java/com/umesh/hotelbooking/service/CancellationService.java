@@ -21,10 +21,10 @@ import com.umesh.hotelbooking.gateway.PaymentGatewayProvider;
 import com.umesh.hotelbooking.gateway.PaymentGatewayRouter;
 import com.umesh.hotelbooking.gateway.RefundRequest;
 import com.umesh.hotelbooking.gateway.RefundResult;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.PaymentRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RefundRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.PaymentStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RefundStore;
 import com.umesh.hotelbooking.web.RequestMeta;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,10 +46,10 @@ public class CancellationService {
 
     private static final Logger log = LoggerFactory.getLogger(CancellationService.class);
 
-    private final BookingRepository bookingRepository;
-    private final PropertyRepository propertyRepository;
-    private final PaymentRepository paymentRepository;
-    private final RefundRepository refundRepository;
+    private final BookingStore bookingStore;
+    private final PropertyStore propertyStore;
+    private final PaymentStore paymentStore;
+    private final RefundStore refundStore;
     private final RefundPolicyFactory refundPolicyFactory;
     private final LedgerService ledgerService;
     private final InventoryReservationService reservationService;
@@ -58,10 +58,10 @@ public class CancellationService {
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
-    public CancellationService(BookingRepository bookingRepository,
-                               PropertyRepository propertyRepository,
-                               PaymentRepository paymentRepository,
-                               RefundRepository refundRepository,
+    public CancellationService(BookingStore bookingStore,
+                               PropertyStore propertyStore,
+                               PaymentStore paymentStore,
+                               RefundStore refundStore,
                                RefundPolicyFactory refundPolicyFactory,
                                LedgerService ledgerService,
                                InventoryReservationService reservationService,
@@ -69,10 +69,10 @@ public class CancellationService {
                                IdempotencyService idempotencyService,
                                ApplicationEventPublisher eventPublisher,
                                Clock clock) {
-        this.bookingRepository = bookingRepository;
-        this.propertyRepository = propertyRepository;
-        this.paymentRepository = paymentRepository;
-        this.refundRepository = refundRepository;
+        this.bookingStore = bookingStore;
+        this.propertyStore = propertyStore;
+        this.paymentStore = paymentStore;
+        this.refundStore = refundStore;
         this.refundPolicyFactory = refundPolicyFactory;
         this.ledgerService = ledgerService;
         this.reservationService = reservationService;
@@ -90,7 +90,7 @@ public class CancellationService {
             return cached.get();
         }
 
-        Booking booking = bookingRepository.findByBookingUid(bookingUid)
+        Booking booking = bookingStore.findByBookingUid(bookingUid)
                 .orElseThrow(() -> new BookingNotFoundException(bookingUid));
 
         // 2. FSM validate: CONFIRMED -> CANCELLED (reject if already terminal).
@@ -102,13 +102,13 @@ public class CancellationService {
             throw new InvalidStateTransitionException(booking.getState().name(), BookingState.CANCELLED.name());
         }
 
-        Payment settledPayment = paymentRepository.findByBookingId(booking.getId()).stream()
+        Payment settledPayment = paymentStore.findByBookingId(booking.getId()).stream()
                 .filter(payment -> payment.getState() == PaymentState.SETTLED)
                 .findFirst()
                 .orElseThrow(() -> new InvalidPaymentStateException(
                         "Booking " + bookingUid + " has no settled payment to refund"));
 
-        Property property = propertyRepository.findById(booking.getPropertyId())
+        Property property = propertyStore.findById(booking.getPropertyId())
                 .orElseThrow(() -> new PropertyNotFoundException("for booking " + bookingUid));
         String policyCode = property.getPropertyGroup().getRefundPolicyCode();
 
@@ -126,7 +126,7 @@ public class CancellationService {
         reservationService.release(booking.getRoomTypeId(), booking.nights(), booking.getUnits());
 
         // 6. Persist Refund(REQUESTED), transition booking -> CANCELLED.
-        Refund refund = refundRepository.save(Refund.builder()
+        Refund refund = refundStore.save(Refund.builder()
                 .bookingId(booking.getId())
                 .paymentId(settledPayment.getId())
                 .amount(refundAmount)

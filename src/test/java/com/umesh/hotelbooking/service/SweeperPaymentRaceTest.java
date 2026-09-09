@@ -7,8 +7,9 @@ import com.umesh.hotelbooking.entity.Booking;
 import com.umesh.hotelbooking.entity.BookingState;
 import com.umesh.hotelbooking.entity.DailyInventory;
 import com.umesh.hotelbooking.entity.PaymentMethod;
+import com.umesh.hotelbooking.exception.InvalidPaymentStateException;
 import com.umesh.hotelbooking.gateway.SimulatedOutcome;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
 import com.umesh.hotelbooking.web.ApiType;
 import com.umesh.hotelbooking.web.RequestMeta;
 import org.junit.jupiter.api.Test;
@@ -77,9 +78,9 @@ class SweeperPaymentRaceTest extends AbstractBookingConcurrencyTestSupport {
     @Autowired
     private BookingSweeper bookingSweeper;
     @Autowired
-    private com.umesh.hotelbooking.repository.BookingRepository bookingRepository;
+    private com.umesh.hotelbooking.repository.BookingStore bookingStore;
     @Autowired
-    private DailyInventoryRepository dailyInventoryRepository;
+    private DailyInventoryStore dailyInventoryStore;
     @Autowired
     private Clock clock;
 
@@ -128,8 +129,16 @@ class SweeperPaymentRaceTest extends AbstractBookingConcurrencyTestSupport {
                             new RequestMeta(UUID.randomUUID().toString(), ApiType.PAY_BOOKING, UUID.randomUUID().toString()),
                             new InitiatePaymentRequest(PaymentMethod.CARD, SimulatedOutcome.SETTLED));
                 } catch (OptimisticLockingFailureException e) {
-                    // Expected when the sweeper commits first: the booking's version has
-                    // already moved by the time this transaction tries to flush.
+                    // The sweeper committed after this transaction had already read the
+                    // booking: the version has moved by the time this one tries to flush.
+                    paymentException.set(e);
+                } catch (InvalidPaymentStateException e) {
+                    // The sweeper committed *before* this transaction read the booking at all,
+                    // so the payable-state guard rejected it up front rather than letting it
+                    // reach a doomed flush. A second, equally legitimate way to lose this race
+                    // - and the one that only appears when the sweeper wins by a wide enough
+                    // margin, which is why it took a heavily loaded machine to surface it (see
+                    // PROJECT_STRUCTURE.txt.txt 16.9).
                     paymentException.set(e);
                 } catch (Exception e) {
                     synchronized (unexpected) {
@@ -148,17 +157,23 @@ class SweeperPaymentRaceTest extends AbstractBookingConcurrencyTestSupport {
             executor.shutdownNow();
         }
 
-        assertThat(unexpected).as("no failure other than the expected optimistic-lock loss: %s", unexpected).isEmpty();
+        assertThat(unexpected)
+                .as("the only permitted failures are the two ways payment can lose this race: %s", unexpected)
+                .isEmpty();
 
-        Booking reloaded = bookingRepository.findByBookingUid(booking.bookingUid()).orElseThrow();
+        Booking reloaded = bookingStore.findByBookingUid(booking.bookingUid()).orElseThrow();
         int bookedUnits = inventory(fixture, night).getBookedUnits();
 
         if (reloaded.getState() == BookingState.CONFIRMED) {
             assertThat(paymentException.get())
-                    .as("payment won the race, so it must not also have hit an optimistic-lock failure").isNull();
+                    .as("payment won the race, so it must not also have failed").isNull();
             assertThat(bookedUnits)
                     .as("a CONFIRMED booking's inventory must never have been released").isEqualTo(1);
         } else if (reloaded.getState() == BookingState.EXPIRED) {
+            assertThat(paymentException.get())
+                    .as("the sweeper won, so the payment must have lost - silently succeeding "
+                            + "against an expired booking would be the actual corruption")
+                    .isNotNull();
             assertThat(bookedUnits)
                     .as("the sweeper won and released inventory exactly once").isZero();
         } else {
@@ -167,7 +182,7 @@ class SweeperPaymentRaceTest extends AbstractBookingConcurrencyTestSupport {
     }
 
     private DailyInventory inventory(Fixture fixture, LocalDate night) {
-        return dailyInventoryRepository.findByRoomTypeIdAndStayDate(fixture.roomTypeId(), night).orElseThrow();
+        return dailyInventoryStore.findByRoomTypeIdAndStayDate(fixture.roomTypeId(), night).orElseThrow();
     }
 
     private static void await(CountDownLatch latch) {

@@ -14,7 +14,7 @@
 <configuration>
 
     <conversionRule conversionWord="msgRedacted"
-                     converterClass="com.umesh.hotelbooking.security.LogRedactionConverter"/>
+                     class="com.umesh.hotelbooking.security.LogRedactionConverter"/>
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>

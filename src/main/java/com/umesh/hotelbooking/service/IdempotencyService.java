@@ -4,7 +4,7 @@ import com.umesh.hotelbooking.entity.IdempotencyRecord;
 import com.umesh.hotelbooking.entity.IdempotencyStatus;
 import com.umesh.hotelbooking.exception.IdempotencyConflictException;
 import com.umesh.hotelbooking.exception.IdempotencyPayloadMismatchException;
-import com.umesh.hotelbooking.repository.IdempotencyRecordRepository;
+import com.umesh.hotelbooking.repository.IdempotencyRecordStore;
 import com.umesh.hotelbooking.web.RequestMeta;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -48,12 +48,12 @@ import java.util.Optional;
 @Service
 public class IdempotencyService {
 
-    private final IdempotencyRecordRepository repository;
+    private final IdempotencyRecordStore store;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
-    public IdempotencyService(IdempotencyRecordRepository repository, ObjectMapper objectMapper, Clock clock) {
-        this.repository = repository;
+    public IdempotencyService(IdempotencyRecordStore store, ObjectMapper objectMapper, Clock clock) {
+        this.store = store;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
@@ -72,7 +72,7 @@ public class IdempotencyService {
     public <T> Optional<T> begin(RequestMeta meta, Object requestPayload, Class<T> responseType) {
         String hash = hash(requestPayload);
 
-        Optional<IdempotencyRecord> existing = repository.findById(meta.msgId());
+        Optional<IdempotencyRecord> existing = store.findById(meta.msgId());
         if (existing.isPresent()) {
             return handleReplay(existing.get(), hash, responseType);
         }
@@ -86,7 +86,7 @@ public class IdempotencyService {
                 .correlationId(meta.correlationId())
                 .build();
         try {
-            repository.saveAndFlush(record);
+            store.saveAndFlush(record);
         } catch (DataIntegrityViolationException e) {
             // Lost the race on the msgId primary key: another request claimed it first.
             throw new IdempotencyConflictException(meta.msgId());
@@ -106,11 +106,11 @@ public class IdempotencyService {
 
     /** Marks {@code msgId} COMPLETED with the response a replay should return. */
     public void complete(String msgId, Object response) {
-        IdempotencyRecord record = repository.findById(msgId)
+        IdempotencyRecord record = store.findById(msgId)
                 .orElseThrow(() -> new IllegalStateException("No idempotency record for msgId " + msgId));
         record.setStatus(IdempotencyStatus.COMPLETED);
         record.setResponseBody(serialize(response));
-        repository.save(record);
+        store.save(record);
     }
 
     /** Jackson 3's write/read methods throw an unchecked {@code JacksonException} directly -

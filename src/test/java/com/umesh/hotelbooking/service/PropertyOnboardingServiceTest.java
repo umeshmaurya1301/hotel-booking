@@ -9,10 +9,10 @@ import com.umesh.hotelbooking.entity.Property;
 import com.umesh.hotelbooking.exception.InvalidRequestException;
 import com.umesh.hotelbooking.exception.OwnerNotFoundException;
 import com.umesh.hotelbooking.exception.PropertyGroupNotFoundException;
-import com.umesh.hotelbooking.repository.DailyInventoryRepository;
-import com.umesh.hotelbooking.repository.PropertyGroupRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
-import com.umesh.hotelbooking.repository.RoomTypeRepository;
+import com.umesh.hotelbooking.repository.DailyInventoryStore;
+import com.umesh.hotelbooking.repository.PropertyGroupStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
+import com.umesh.hotelbooking.repository.RoomTypeStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -68,13 +68,13 @@ class PropertyOnboardingServiceTest {
     @Autowired
     private PropertyOnboardingService onboardingService;
     @Autowired
-    private PropertyRepository propertyRepository;
+    private PropertyStore propertyStore;
     @Autowired
-    private PropertyGroupRepository propertyGroupRepository;
+    private PropertyGroupStore propertyGroupStore;
     @Autowired
-    private RoomTypeRepository roomTypeRepository;
+    private RoomTypeStore roomTypeStore;
     @Autowired
-    private DailyInventoryRepository dailyInventoryRepository;
+    private DailyInventoryStore dailyInventoryStore;
 
     private OnboardPropertyRequest independentRequest(String name, String city) {
         return new OnboardPropertyRequest(
@@ -93,8 +93,8 @@ class PropertyOnboardingServiceTest {
 
         assertThat(response.propertyGroupUid()).isNotBlank();
 
-        Property saved = propertyRepository.findByPropertyUid(response.propertyUid()).orElseThrow();
-        List<Property> siblings = propertyRepository.findByPropertyGroupId(saved.getPropertyGroup().getId());
+        Property saved = propertyStore.findByPropertyUid(response.propertyUid()).orElseThrow();
+        List<Property> siblings = propertyStore.findByPropertyGroupId(saved.getPropertyGroup().getId());
 
         assertThat(siblings).hasSize(1);
         assertThat(siblings.get(0).getPropertyUid()).isEqualTo(response.propertyUid());
@@ -117,8 +117,8 @@ class PropertyOnboardingServiceTest {
         assertThat(secondResponse.propertyGroupUid()).isEqualTo(first.propertyGroupUid());
         assertThat(secondResponse.ownerUid()).isEqualTo(first.ownerUid());
 
-        Property saved = propertyRepository.findByPropertyUid(secondResponse.propertyUid()).orElseThrow();
-        assertThat(propertyRepository.findByPropertyGroupId(saved.getPropertyGroup().getId())).hasSize(2);
+        Property saved = propertyStore.findByPropertyUid(secondResponse.propertyUid()).orElseThrow();
+        assertThat(propertyStore.findByPropertyGroupId(saved.getPropertyGroup().getId())).hasSize(2);
     }
 
     @Test
@@ -130,7 +130,7 @@ class PropertyOnboardingServiceTest {
 
         assertThat(independent.propertyGroupUid()).isNotBlank();
         assertThat(chainFirst.propertyGroupUid()).isNotBlank();
-        assertThat(propertyGroupRepository.findByPropertyGroupUid(independent.propertyGroupUid()))
+        assertThat(propertyGroupStore.findByPropertyGroupUid(independent.propertyGroupUid()))
                 .isPresent();
     }
 
@@ -146,10 +146,10 @@ class PropertyOnboardingServiceTest {
 
         PropertyResponse response = onboardingService.onboard(request);
 
-        Property saved = propertyRepository.findByPropertyUid(response.propertyUid()).orElseThrow();
-        assertThat(roomTypeRepository.findByPropertyId(saved.getId())).hasSize(2);
-        for (var roomType : roomTypeRepository.findByPropertyId(saved.getId())) {
-            assertThat(dailyInventoryRepository.countByRoomTypeId(roomType.getId())).isEqualTo(5);
+        Property saved = propertyStore.findByPropertyUid(response.propertyUid()).orElseThrow();
+        assertThat(roomTypeStore.findByPropertyId(saved.getId())).hasSize(2);
+        for (var roomType : roomTypeStore.findByPropertyId(saved.getId())) {
+            assertThat(dailyInventoryStore.countByRoomTypeId(roomType.getId())).isEqualTo(5);
         }
     }
 
@@ -159,9 +159,9 @@ class PropertyOnboardingServiceTest {
         // the server's date would leave the 8th unmaterialised and therefore unbookable.
         PropertyResponse response = onboardingService.onboard(independentRequest("Midnight Hotel", "Bengaluru"));
 
-        Property saved = propertyRepository.findByPropertyUid(response.propertyUid()).orElseThrow();
-        Long roomTypeId = roomTypeRepository.findByPropertyId(saved.getId()).get(0).getId();
-        List<DailyInventory> rows = dailyInventoryRepository.findByRoomTypeIdAndStayDateBetween(
+        Property saved = propertyStore.findByPropertyUid(response.propertyUid()).orElseThrow();
+        Long roomTypeId = roomTypeStore.findByPropertyId(saved.getId()).get(0).getId();
+        List<DailyInventory> rows = dailyInventoryStore.findByRoomTypeIdAndStayDateBetween(
                 roomTypeId, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30));
 
         assertThat(rows).extracting(DailyInventory::getStayDate)
@@ -186,14 +186,14 @@ class PropertyOnboardingServiceTest {
 
         PropertyResponse response = onboardingService.onboard(request);
 
-        Property saved = propertyRepository.findByPropertyUid(response.propertyUid()).orElseThrow();
-        Long roomTypeId = roomTypeRepository.findByPropertyId(saved.getId()).get(0).getId();
+        Property saved = propertyStore.findByPropertyUid(response.propertyUid()).orElseThrow();
+        Long roomTypeId = roomTypeStore.findByPropertyId(saved.getId()).get(0).getId();
 
         // 2026-09-11 is a Friday, 2026-09-10 a Thursday.
-        BigDecimal friday = dailyInventoryRepository
+        BigDecimal friday = dailyInventoryStore
                 .findByRoomTypeIdAndStayDate(roomTypeId, LocalDate.of(2026, 9, 11))
                 .orElseThrow().getPricePerUnit();
-        BigDecimal thursday = dailyInventoryRepository
+        BigDecimal thursday = dailyInventoryStore
                 .findByRoomTypeIdAndStayDate(roomTypeId, LocalDate.of(2026, 9, 10))
                 .orElseThrow().getPricePerUnit();
 
@@ -212,10 +212,10 @@ class PropertyOnboardingServiceTest {
 
         PropertyResponse response = onboardingService.onboard(request);
 
-        Property saved = propertyRepository.findByPropertyUid(response.propertyUid()).orElseThrow();
+        Property saved = propertyStore.findByPropertyUid(response.propertyUid()).orElseThrow();
         assertThat(saved.getCity()).isEqualTo("  BENGALURU  ");
         assertThat(saved.getCityNormalised()).isEqualTo("bengaluru");
-        assertThat(propertyRepository.findByCityNormalised("bengaluru"))
+        assertThat(propertyStore.findByCityNormalised("bengaluru"))
                 .extracting(Property::getPropertyUid)
                 .contains(response.propertyUid());
     }

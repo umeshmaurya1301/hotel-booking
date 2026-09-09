@@ -17,9 +17,9 @@ import com.umesh.hotelbooking.gateway.PaymentCircuitBreaker;
 import com.umesh.hotelbooking.gateway.PaymentGatewayClient;
 import com.umesh.hotelbooking.gateway.PaymentGatewayProvider;
 import com.umesh.hotelbooking.gateway.PaymentGatewayRouter;
-import com.umesh.hotelbooking.repository.BookingRepository;
-import com.umesh.hotelbooking.repository.PaymentRepository;
-import com.umesh.hotelbooking.repository.PropertyRepository;
+import com.umesh.hotelbooking.repository.BookingStore;
+import com.umesh.hotelbooking.repository.PaymentStore;
+import com.umesh.hotelbooking.repository.PropertyStore;
 import com.umesh.hotelbooking.web.RequestMeta;
 import org.junit.jupiter.api.Test;
 
@@ -170,9 +170,9 @@ class PaymentCircuitBreakerTest {
     @Test
     @SuppressWarnings("unchecked")
     void withTheBreakerForcedOpenPayReturnsUnknownNeverConfirmedNeverFailed() {
-        BookingRepository bookingRepository = mock(BookingRepository.class);
-        PropertyRepository propertyRepository = mock(PropertyRepository.class);
-        PaymentRepository paymentRepository = mock(PaymentRepository.class);
+        BookingStore bookingStore = mock(BookingStore.class);
+        PropertyStore propertyStore = mock(PropertyStore.class);
+        PaymentStore paymentStore = mock(PaymentStore.class);
         PaymentGatewayRouter router = mock(PaymentGatewayRouter.class);
         PaymentGatewayClient gatewayClient = mock(PaymentGatewayClient.class);
         PaymentCircuitBreaker circuitBreaker = mock(PaymentCircuitBreaker.class);
@@ -191,10 +191,10 @@ class PaymentCircuitBreakerTest {
                 .state(BookingState.CREATED)
                 .build();
 
-        when(bookingRepository.findByBookingUid("bk-1")).thenReturn(Optional.of(booking));
-        when(propertyRepository.findById(10L)).thenReturn(Optional.of(property));
-        when(paymentRepository.findByBookingId(1L)).thenReturn(List.of());
-        when(paymentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(bookingStore.findByBookingUid("bk-1")).thenReturn(Optional.of(booking));
+        when(propertyStore.findById(10L)).thenReturn(Optional.of(property));
+        when(paymentStore.findByBookingId(1L)).thenReturn(List.of());
+        when(paymentStore.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         PaymentGatewayProvider provider = providerMock();
         when(provider.providerCode()).thenReturn("MOCK_CARD");
         when(router.route(eq(PaymentMethod.CARD), eq("HDFC"))).thenReturn(provider);
@@ -202,7 +202,7 @@ class PaymentCircuitBreakerTest {
                 .thenReturn(Optional.empty());
         when(circuitBreaker.execute(any())).thenThrow(new CircuitBreakerOpenException("open"));
 
-        PaymentService paymentService = new PaymentService(bookingRepository, propertyRepository, paymentRepository,
+        PaymentService paymentService = new PaymentService(bookingStore, propertyStore, paymentStore,
                 router, gatewayClient, circuitBreaker, statusCheckProperties(), idempotencyService,
                 ledgerService, clock);
 

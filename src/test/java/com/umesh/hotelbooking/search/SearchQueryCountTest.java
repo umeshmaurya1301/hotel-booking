@@ -90,7 +90,7 @@ class SearchQueryCountTest {
         assertThat(response.resultCount()).isEqualTo(6);
 
         long queryCount = statistics().getPrepareStatementCount();
-        // Two property fetches (roomTypes, then amenities - see PropertyRepository's own
+        // Two property fetches (roomTypes, then amenities - see PropertyStore's own
         // Javadoc for why it is two, not one) plus one batched inventory fetch: three,
         // regardless of how many of the six candidates survive to that point. Asserted as
         // "well under one query per candidate" rather than pinned to the exact literal 3, so
